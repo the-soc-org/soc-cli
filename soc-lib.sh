@@ -111,7 +111,7 @@ check_if_grep_installed() {
   if ! command -v grep &> /dev/null; then
     echo -n "${ERR} 'grep' – a command-line utility for searching text " >&2
     echo -n "that match a regular expression is not installed. " >&2
-    echo "Install it to continue:https://www.gnu.org/software/grep/ " >&2
+    echo "Install it to continue: https://www.gnu.org/software/grep/ " >&2
     return 1
   elif [[ "${VERBOSE}" -eq 1 ]]; then
     echo "${YUP} 'grep' is installed on your computer."
@@ -368,5 +368,5 @@ validate_no_duplicates() {
     echo "${YUP} '${var_name}' has no duplicates."
   fi
 
-  "${is_set_nounset}" || set +u
+  "${is_set_nounset}" && set -u || true
 }

@@ -285,7 +285,7 @@ check_repo_gh_pages_enabled() {
 
 # Enables GitHub Pages on the first target repository for the specified branch.
 # Usage: switch_on_gh_pages
-swich_on_gh_pages() {
+switch_on_gh_pages() {
   # Local variable declaration for the return value
   local has_pages
 
@@ -387,7 +387,7 @@ get_file_sha() {
     if [[ -n "${sha}" ]]; then
       echo "${sha}"
     else
-      echo "${ERR} SHA for the '${source_file}' is emapty"
+      echo "${ERR} SHA for the '${source_file}' is empty"
       exit 1
     fi
   else
@@ -1150,7 +1150,7 @@ enable_team_review_assignment() {
 
   # Check whether the operation was successful
   if [[ $? -eq 0 ]]; then
-    echo -n "${OK} The review assignment has benn enabled "
+    echo -n "${OK} The review assignment has been enabled "
     echo "for the '${GH_TEAM_NAME}' team"
   else
     echo -n "${ERR} An error occurred while enabling the review " >&2
@@ -1954,8 +1954,8 @@ open() {
 
   # GitHub Pages is available in private repositories with GitHub Pro, GitHub
   # Team, GitHub Enterprise Cloud, and GitHub Enterprise Server.
-  echo 'Running swich_on_gh_pages()'
-  swich_on_gh_pages
+  echo 'Running switch_on_gh_pages()'
+  switch_on_gh_pages
   echo 'Running set_website_link()'
   set_repos_website
 }
