@@ -368,5 +368,5 @@ validate_no_duplicates() {
     echo "${YUP} '${var_name}' has no duplicates."
   fi
 
-  "${is_set_nounset}" && set -u || true
+  if [[ "${is_set_nounset}" == 'true' ]]; then set -u; fi
 }

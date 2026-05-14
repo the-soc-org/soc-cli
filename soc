@@ -25,10 +25,14 @@ fi
 # Determine the platform CLI.  We parse system_config.sh with grep/sed instead
 # of sourcing it to avoid readonly-variable conflicts when the config is later
 # sourced inside the individual command scripts.
+# The generated system_config.sh always uses single quotes (e.g.
+# readonly SOC_PLATFORM_CLI='gh'), but the parser also handles double-quoted
+# and bare (unquoted) values for robustness.
 SOC_PLATFORM_CLI='gh'
 if [[ -f 'system_config.sh' ]]; then
   _val=$(grep "^readonly SOC_PLATFORM_CLI=" system_config.sh \
-         | sed "s/^readonly SOC_PLATFORM_CLI='\(.*\)'/\1/" 2>/dev/null \
+         | sed "s/^readonly SOC_PLATFORM_CLI=//; s/^['\"]//; s/['\"]$//" \
+           2>/dev/null \
          || true)
   if [[ -n "${_val:-}" ]]; then
     SOC_PLATFORM_CLI="${_val}"
