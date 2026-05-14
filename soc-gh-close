@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# soc-gh-close: Closes a course (archives project data, optionally removes team)
+# using GitHub CLI (gh).
+# Usage: soc close
+
+# shellcheck source=soc-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib.sh"
+# shellcheck source=soc-lib-gh.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib-gh.sh"
+
+source_config_files
+precheck 0
+check_if_gh_has_required_token_scopes
+
+close

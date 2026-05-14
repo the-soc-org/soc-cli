@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# soc-gh-invite: Invites users to the organization team via GitHub CLI (gh).
+# Usage: soc invite
+
+# shellcheck source=soc-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib.sh"
+# shellcheck source=soc-lib-gh.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib-gh.sh"
+
+source_config_files
+precheck 0
+check_if_gh_has_required_token_scopes
+
+invite

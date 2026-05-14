@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# soc-gh-sync: Creates project and/or repositories for a course using GitHub CLI (gh).
+# Usage: soc sync [project|repos]
+
+# shellcheck source=soc-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib.sh"
+# shellcheck source=soc-lib-gh.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib-gh.sh"
+
+source_config_files
+precheck 0
+check_if_gh_has_required_token_scopes
+
+# With an optional argument, the user specifies the source with which they
+# want to synchronize; argument values: 'project' or 'repos'. Without the
+# argument both the project and the repos will be synchronized.
+sync "${1:-}"

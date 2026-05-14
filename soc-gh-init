@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+# soc-gh-init: Initializes soc configuration files for use with GitHub CLI (gh).
+# Usage: soc init
+
+# shellcheck source=soc-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib.sh"
+# shellcheck source=soc-lib-gh.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib-gh.sh"
+
+init

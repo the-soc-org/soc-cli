@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# soc-gh-precheck: Validates configuration and required tools for GitHub CLI (gh).
+# Usage: soc precheck
+
+# shellcheck source=soc-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib.sh"
+# shellcheck source=soc-lib-gh.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib-gh.sh"
+
+source_config_files
+
+# Validate global variables with verbosity level 1
+precheck 1
