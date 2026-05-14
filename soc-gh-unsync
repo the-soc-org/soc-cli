@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# soc-gh-unsync: Removes project and/or repositories for a course using GitHub CLI (gh).
+# Usage: soc unsync [project|repos]
+
+# shellcheck source=soc-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib.sh"
+# shellcheck source=soc-lib-gh.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib-gh.sh"
+
+source_config_files
+precheck 0
+check_if_gh_has_required_token_scopes
+
+# With an optional argument, the user specifies the source from which they
+# want to unsynchronize; argument values: 'project' or 'repos'. Without the
+# argument both the project and the repos will be unsynchronized.
+unsync "${1:-}"

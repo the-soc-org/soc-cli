@@ -1,0 +1,2396 @@
+#!/usr/bin/env bash
+
+# GitHub CLI (gh) specific functions and main soc command implementations.
+# Requires soc-lib.sh to be sourced before this file.
+
+# Check if GitHub CLI (gh) is installed
+check_if_gh_installed() {
+  if ! command -v gh &> /dev/null; then
+    echo -n "${ERR} GitHub CLI (gh) is not installed on your computer. " >&2
+    echo "Install to continue: https://cli.github.com/" >&2
+    return 1
+  elif [[ "${VERBOSE}" -eq 1 ]]; then
+    echo "${YUP} 'GitHub CLI (gh)' is installed on your computer."
+  fi
+}
+
+# Checks if the GitHub CLI is authenticated with the required token scopes.
+# Aborts the script with an error message if required scopes are missing.
+# Usage: check_if_gh_has_required_token_scopes
+check_if_gh_has_required_token_scopes() {
+
+  local -a token_scopes
+  local -a missing_scopes
+  local missing_scopes_csv
+
+  # Fetch the current token scopes using 'gh', extract line with 'grep' and use
+  # 'sed' to parse the line
+  token_scopes=$(gh auth status | grep 'Token scopes' | sed 's/.*Token scopes: //')
+  missing_scopes=()
+
+  # Check for each required scope
+  for scope in "${GH_CLI_TOKEN_SCOPES[@]}"; do
+    if [[ "${token_scopes}" != *"${scope}"* ]]; then
+      missing_scopes+=("${scope}")
+    fi
+  done
+
+  # Inform the user about the status
+  if [[ "${#missing_scopes[@]}" -ne 0 ]]; then
+    echo "${ERR} Missing required token scopes:" >&2
+    for scope in "${missing_scopes[@]}"; do
+      echo "- ${scope}" >&2
+    done
+
+    missing_scopes_csv=$(IFS=,; echo "${missing_scopes[*]}")
+    echo -n "${WRN} Run 'gh auth refresh -s ${missing_scopes_csv}' "
+    echo "to update the token."
+
+    exit 1
+  fi
+}
+
+# Checks if repositories listed in the array in the config file exist. Aborts
+# the script with an error message if any repository does not exist. Usage:
+# check_if_repos_exist <repos_owner> <repos_name> <repos>
+check_if_repos_exist() {
+
+  if [[ "$#" -lt 2 ]]; then
+    echo -n "${ERR} Insufficient arguments provided for the " >&2
+    echo "'${FUNCNAME[0]}' function." >&2
+    exit 1
+  fi
+
+  local repos_owner="$1"
+  shift # Remove the argument
+  local repos_name="$1"
+  shift # Remove the argument to treat the rest as an array
+  local -a repos=("$@")
+
+  # Initialize a flag to track if any repository does not exist
+  local repo_noexists=0
+
+  for ((i=0; i<"${#repos[@]}"; i++)); do
+    # Check if the repository exists
+    if gh repo view "${repos_owner}/${repos[i]}" &> /dev/null; then
+      echo -n "${YUP} Repository ${repos_owner}/${repos[i]} "
+      echo "exists as expected."
+    else
+      echo "${ERR} Repository ${repos_owner}/${repos[i]} no exists." >&2
+      repo_noexists=1
+    fi
+  done
+
+  # Check the flag and exit with an error if any repository does not exist
+  if [[ "${repo_noexists}" -eq 1 ]]; then
+    echo -n "${ERR} For proper functioning of '${FUNCNAME[1]}' command, " >&2
+    echo -n "it is required that the repositories listed in the " >&2
+    echo -n "'${repos_name}' array in the config file exist " >&2
+    echo "on the '${repos_owner}' GitHub account." >&2
+    exit 1
+  else
+    echo -n "${OK} The check to see if the '${repos_name}' "
+    echo "repositories exist has been completed."
+  fi
+}
+
+# Checks if repositories listed in the array in the config file do not already
+# exist. Aborts the script with an warning message if any repository already
+# exists. Usage: check_if_repos_noexist <repos_owner> <repos_name> <repos>
+check_if_repos_noexist() {
+
+  local repos_owner="$1"
+  shift # Remove the argument
+  local repos_name="$1"
+  shift # Remove the argument to treat the rest as an array
+  local -a repos=("$@")
+
+  # Initialize a flag to track if any repository already exists
+  local repo_exists=0
+
+  for ((i=0; i<"${#repos[@]}"; i++)); do
+    # Check if the repository exists
+    if ! gh repo view "${repos_owner}/${repos[i]}" &> /dev/null; then
+      echo -n "${YUP} Repository ${repos_owner}/${repos[i]} "
+      echo "not yet exists as expected."
+    else
+      echo "${WRN} Repository ${repos_owner}/${repos[i]} already exists."
+      repo_exists=1
+    fi
+  done
+
+  # Check the flag and exit with a warning if any repository already exists. The
+  # presence of repositories may be due to synchronizing repositories beforehand
+  # or already having own repositories with the same names as the source ones.
+  if [[ "${repo_exists}" -eq 1 ]]; then
+    echo -n "${WRN} One or more repositories listed in the '${repos_name}'"
+    echo -n " array in the config file already exist on the "
+    echo "'${repos_owner}' GitHub account."
+    exit 1
+  else
+    echo -n "${OK} The check to see if the '${repos_name}' "
+    echo "repositories exist has been completed."
+  fi
+}
+
+# Checks if repositories in source repo owner GitHub account and listed in the
+# array in the config file are templates. Attempt to make them templates if they
+# are not already. Aborts the script with an error message if any repository is
+# not a template. Usage: ensure_repos_as_templates <repos_owner> <repos_name>
+# <repos>
+ensure_repos_as_templates() {
+
+  local repos_owner="$1"
+  shift # Remove the argument
+  local repos_name="$1"
+  shift # Remove the argument to treat the rest as an array
+  local -a repos=("$@")
+
+  # Initialize a flag to track if any repository is not a template
+  local repo_is_not_template=0
+
+  for ((i=0; i<"${#repos[@]}"; i++)); do
+    # Check if the repository is a template
+    if [[ $(gh api repos/"${repos_owner}/${repos[i]}" --jq '.is_template') == true ]]; then
+      echo -n "${YUP} Repository ${repos_owner}/${repos[i]} "
+      echo "is a template as expected."
+    else
+      echo -n "${WRN} Repository ${repos_owner}/${repos[i]} is not a template. "
+      echo "Attempting to make it a template..."
+      # Attempt to convert the repository to a template
+      if gh api -X PATCH repos/"${repos_owner}/${repos[i]}" --field is_template=true --silent &> /dev/null; then
+        echo "${YUP} Successfully transformed into a template."
+      else
+        echo "${WRN} Failed to transform into a template."
+        repo_is_not_template=1
+      fi
+    fi
+  done
+
+  # Check the flag and exit with a error if any repository is not a template.
+  if [[ "${repo_is_not_template}" -eq 1 ]]; then
+    echo -n "${ERR} For proper functioning of '${FUNCNAME[1]}' command, " >&2
+    echo -n "it is required that the repositories in '${repos_owner}' " >&2
+    echo -n "GitHub account and listed in the '${repos_name}' array " >&2
+    echo "in the config file are templates." >&2
+    exit 1
+  else
+    echo -n "${OK} The check to see if the '${repos_name}' repositories "
+    echo "are templates has been completed."
+  fi
+}
+
+# Forks repositories from SOURCE_REPOS_OWNER to GH_ORG_NAME without cloning
+# them.
+# Usage: fork_repositories
+fork_repositories() {
+
+  for ((i=0; i<"${#SOURCE_REPOS[@]}"; i++)); do
+
+    # Fork the repository to the organization without cloning it locally.
+    gh repo fork "${SOURCE_REPOS_OWNER}"/"${SOURCE_REPOS[i]}" \
+       --org "${GH_ORG_NAME}" \
+       --fork-name "${TARGET_REPOS[i]}" \
+       --clone=false
+
+    if [[ $? -ne 0 ]]; then
+      echo -n "${ERR} An error occurred while forking the " >&2
+      echo -n "${SOURCE_REPOS_OWNER}/${SOURCE_REPOS[i]} repository to " >&2
+      echo "${GH_ORG_NAME}/${TARGET_REPOS[i]}" >&2
+      exit 1
+    fi
+  done
+  echo "${OK} Forking repositories has been completed"
+}
+
+# Create repositories in GH_ORG_NAME from SOURCE_REPOS_OWNER templates. Usage:
+# create_private_repos_from_templates
+create_private_repos_from_templates() {
+
+  for ((i=0; i<"${#SOURCE_REPOS[@]}"; i++)); do
+
+    # Create a repository in an organization from a template.
+    gh repo create "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}" \
+       --template "${SOURCE_REPOS_OWNER}"/"${SOURCE_REPOS[i]}" \
+       --private=true
+
+    if [[ $? -ne 0 ]]; then
+      echo -n "${ERR} An error occurred while creating the " >&2
+      echo -n "${GH_ORG_NAME}/${TARGET_REPOS[i]} repository from " >&2
+      echo "the ${SOURCE_REPOS_OWNER}/${SOURCE_REPOS[i]} template" >&2
+      exit 1
+    fi
+  done
+  echo "${OK} Creating repositories has been completed"
+}
+
+# Delete repositories listed in TARGET_REPOS array in user_config.sh file from
+# GH_ORG_NAME. Usage: delete_repositories
+delete_repositories() {
+
+  for ((i=0; i<"${#TARGET_REPOS[@]}"; i++)); do
+
+    # deleting a repo
+    gh repo delete "$GH_ORG_NAME"/"${TARGET_REPOS[i]}" --yes
+
+    if [[ $? -ne 0 ]]; then
+      echo -n "${ERR} An error occurred while deleting the repository" >&2
+      echo "$GH_ORG_NAME"/"${TARGET_REPOS[i]}" >&2
+      exit 1
+    fi
+  done
+
+  echo "${OK} Deletion of the repositories has been completed."
+}
+
+# Sets specified repositories in GH_ORG_NAME as private and marks them as
+# templates.
+# Usage: set_repo_as_private_template
+set_repo_as_private_template() {
+
+  for ((i=0; i<"${#TARGET_REPOS[@]}"; i++)); do
+
+    gh repo edit "$GH_ORG_NAME"/"${TARGET_REPOS[i]}" \
+       --visibility private \
+       --template=true
+
+    if [[ $? -ne 0 ]]; then
+      echo -n "${ERR} An error occurred while setting the " >&2
+      echo "$GH_ORG_NAME/${TARGET_REPOS[i]} repository as a private template" >&2
+      exit 1
+    fi
+  done
+  echo "${OK} Setting repositories as private templates has been completed"
+}
+
+check_repo_gh_pages_enabled() {
+  # Local variable declaration for return value
+  local has_pages
+
+  has_pages=$(gh api \
+                 --method GET \
+                 --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+                 --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+                 repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[0]}" \
+                 --jq '.has_pages')
+
+  if [[ $? -eq 0 ]]; then
+    echo "${has_pages}"
+  else
+    echo -n "${ERR} An error occurred while checking if GitHub Pages "
+    echo "is enabled for '${GH_ORG_NAME}/${TARGET_REPOS[0]}'."
+    exit 1
+  fi
+}
+
+# Enables GitHub Pages on the first target repository for the specified branch.
+# Usage: switch_on_gh_pages
+switch_on_gh_pages() {
+  # Local variable declaration for the return value
+  local has_pages
+
+  has_pages=$(check_repo_gh_pages_enabled)
+  if [[ $? -eq 0 ]]; then
+    if [[ "${has_pages}" == true ]]; then
+      echo -n "${WRN} GitHub Pages for ${GH_ORG_NAME}/${TARGET_REPOS[0]} "
+      echo "is already enabled"
+      return 0
+    fi
+  else
+    echo "${has_pages}" >&2
+    exit 1
+  fi
+
+  echo '{"source":{"branch":"'"${GH_REPO_BRANCH}"'","path":"/"}}' | gh api \
+                        --method POST \
+                        --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+                        --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+                        /repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[0]}"/pages \
+                        --silent \
+                        --input -
+
+  if [[ $? -eq 0 ]]; then
+    echo -n "${OK} GitHub Pages has been enabled on the '${GH_REPO_BRANCH}' "
+    echo "branch in the ${GH_ORG_NAME}/${TARGET_REPOS[0]} repository."
+    echo -n "${WRN} Please be patient: the creation process for the GitHub "
+    echo -n "page has started, but the page itself will be available "
+    echo "in about 3 minutes."
+  else
+    echo -n "${ERR} An error occurred while enabling the '${GH_REPO_BRANCH}' " >&2
+    echo "branch in the ${GH_ORG_NAME}/${TARGET_REPOS[0]}" >&2
+    exit 1
+  fi
+}
+
+# Sets website links for the target repositories in the GitHub organization.
+# Usage: set_repos_website
+set_repos_website() {
+
+  # Iterate through repositories
+  for ((i=0; i<"${#TARGET_REPOS[@]}"; i++)); do
+
+    # Setting website link in the target repositories"
+    gh repo edit "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}" \
+       --homepage https://"${GH_ORG_NAME}".github.io/"${TARGET_REPOS[0]}"/
+
+    if [[ $? -ne 0 ]]; then
+      echo -n "${ERR} An error occurred while setting a website link in the " >&2
+      echo "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}} repository" >&2
+      exit 1
+    fi
+  done
+  echo "$OK Setting the website links has been completed"
+}
+
+# Sets descriptions for the target repositories in the GitHub organization.
+# Usage: set_repos_descriptions
+set_repos_descriptions() {
+
+  # Iterate through repositories
+  for ((i=0; i<"${#TARGET_REPOS[@]}"; i++)); do
+
+    # Setting website link in the target repositories"
+    gh repo edit "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}" \
+       --description "${TARGET_REPO_DESCRIPTION}"
+
+    if [[ $? -ne 0 ]]; then
+      echo -n "${ERR} An error occurred while setting a website link in the " >&2
+      echo "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}} repository" >&2
+      exit 1
+    fi
+  done
+  echo "$OK Setting the website links has been completed"
+}
+
+# Retrieves the SHA for a file in the first target repository.
+get_file_sha() {
+
+  # Check if the correct number of non-empty arguments is passed
+  if [[ "$#" -ne 1 || -z "$1" ]]; then
+    echo "${ERR} Invalid number of arguments or empty argument." >&2
+    echo "${WRN} Usage: ${FUNCNAME[0]} <source_file>"
+    exit 1
+  fi
+
+  # Local variable declaration for the return value
+  local sha
+
+  # Get the file SHA
+  sha=$(gh api \
+           --method GET \
+           --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+           --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+           repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[0]}"/contents/"${source_file}" \
+           --jq '.sha')
+
+  if [[ $? -eq 0 ]]; then
+    if [[ -n "${sha}" ]]; then
+      echo "${sha}"
+    else
+      echo "${ERR} SHA for the '${source_file}' is empty"
+      exit 1
+    fi
+  else
+    echo "${ERR} An error occurred while obtaining SHA for the '${source_file}'"
+    exit 1
+  fi
+}
+
+# Downloads the contents of a specified file from a repository to a temporary
+# file.
+download_repo_file_contents_to_tmp_file() {
+
+  # Check if the correct number of non-empty arguments is passed
+  if [[ "$#" -ne 2 || -z "$1" || -z "$2" ]]; then
+    echo "${ERR} Invalid number of arguments or empty argument." >&2
+    echo "${WRN} Usage: ${FUNCNAME[0]} <source_file> <temporary_file>"
+    exit 1
+  fi
+
+  local source_file="$1"
+  local tmp_file="$2"
+
+  gh api \
+     --method GET \
+     --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+     --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+     repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[0]}"/contents/"${source_file}" \
+     --jq '.content' | base64 --decode > "${tmp_file}"
+
+  # Check whether the operation was successful
+  if [[ $? -eq 0 ]]; then
+    echo -n "${YUP} The content of the '${source_file}' has been written "
+    echo "to the '${tmp_file}'"
+  else
+    echo -n "${ERR} An error occurred while downloading '${source_file}' " >&2
+    echo "or writing its content to the '${tmp_file}'" >&2
+    exit 1
+  fi
+}
+
+# Updates the contents of a temporary file by replacing specific text.
+# It checks for the presence of SOURCE_REPOS_OWNER and then replaces it with GH_ORG_NAME.
+# Additionally, it iterates through repositories to replace other specified text.
+update_tmp_file() {
+
+  # Check if the correct number of non-empty arguments is passed
+  if [[ "$#" -ne 1 || -z "$1" ]]; then
+    echo "${ERR} Invalid number of arguments or empty argument." >&2
+    echo "${WRN} Usage: ${FUNCNAME[0]} <temporary_file>"
+    exit 1
+  fi
+
+  local tmp_file="$1"
+
+  if grep -q "${SOURCE_REPOS_OWNER}" "${tmp_file}"; then
+    # Perform the replacement in the temporary file
+    sed -i "s/${SOURCE_REPOS_OWNER}/${GH_ORG_NAME}/g" "${tmp_file}"
+
+    if [[ $? -ne 0 ]]; then
+      echo -n "${ERR} An error occurred while updating the " >&2
+      echo "temporary file: ${tmp_file}" >&2
+      exit 1
+    fi
+  else
+    echo -n "${WRN} Text to be replaced '${SOURCE_REPOS_OWNER}' "
+    echo "was not found in the file: '${tmp_file}'."
+  fi
+
+
+  # Iterate through repositories
+  for ((i=1; i<"${#SOURCE_REPOS[@]}"; i++)); do
+
+    local word_to_replace="${SOURCE_REPOS[i]}"
+    local new_word="${TARGET_REPOS[i]}"
+
+    if grep -q "${word_to_replace}" "${tmp_file}"; then
+      # Perform the replacement in the temporary file
+      sed -i "s/${word_to_replace}/${new_word}/g" "${tmp_file}"
+
+      if [[ $? -ne 0 ]]; then
+        echo -n "${ERR} An error occurred while updating the " >&2
+        echo "temporary file: '${tmp_file}'" >&2
+        exit 1
+      fi
+    else
+      echo -n "${WRN} Text to be replaced '${word_to_replace}' "
+      echo "was not found in the file: '${tmp_file}'."
+    fi
+  done
+}
+
+# Updates the contents of a file in a repository by uploading a new version.
+# This function uses a temporary file containing the new content, the SHA of the
+# existing file, and the file path to update the file in the repository.
+update_repo_file_contents() {
+
+  # Check if the correct number of non-empty arguments is passed
+  if [[ "$#" -ne 3 || -z "$1" || -z "$2" || -z "$3" ]]; then
+    echo "${ERR} Invalid number of arguments or empty argument." >&2
+    echo "${WRN} Usage: ${FUNCNAME[0]} <temporary_file> <file_sha> <source_file>"
+    exit 1
+  fi
+
+  local tmp_file="$1"
+  local file_sha="$2"
+  local source_file="$3"
+
+  gh api \
+     --method PUT \
+     --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+     --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+     repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[0]}"/contents/"${source_file}" \
+     --raw-field "message=update ${source_file}" \
+     --raw-field "content=$(base64 < ${tmp_file})" \
+     --raw-field "sha=${file_sha}" \
+     --silent
+
+  # Check whether the operation was successful
+  if [[ $? -eq 0 ]]; then
+    echo "${YUP} The ${source_file} has been updated"
+  else
+    echo "${ERR} An error occurred while updating the '${source_file}'" >&2
+    exit 1
+  fi
+}
+
+# Updates repository files without cloning the entire repository.
+# This function iterates through a list of files, performing the following steps
+# for each:
+# 1. Creates a temporary file to work with the file's content.
+# 2. Retrieves the SHA of the current file in the repository to allow for its update.
+# 3. Downloads the file content from the repository to the temporary file.
+# 4. Applies changes to the content within the temporary file.
+# 5. Uploads the updated content back to the repository, replacing the old file.
+# Usage: update_repo_without_cloning
+update_repo_without_cloning() {
+
+  local file_sha
+  local tmp_file
+
+  # Generate two temporary files and get sha of each source file
+  for source_file in "${SOURCE_MAIN_REPO_INFO_FILES[@]}"; do
+
+    # Create a temporary file
+    tmp_file="$(mktemp)"
+    if [[ $? -ne 0 ]]; then
+      echo "${ERR} Unable to create a temporary file" >&2
+      exit 1
+    else
+      echo "${YUP} Temporary file '${tmp_file}' has been created"
+    fi
+
+    # Remove the temporary file if the script exits unexpectedly. This ensures that even if the
+    # script fails or is interrupted, the temporary file does not remain on disk.
+    # NOTE: ShellCheck may warn about SC2064 here (variable expansion at trap assignment), but this
+    # is intentional.
+    trap "remove_tmp_file ${tmp_file}" EXIT
+
+    # Get the file SHA
+    file_sha=$(get_file_sha "${source_file}")
+    if [[ $? -eq 0 ]]; then
+      echo "${YUP} The SHA for the '${source_file}' file has been obtained"
+    else
+      echo "${file_sha}" >&2
+      exit 1
+    fi
+
+    # Download the file contents to the temporary file
+    download_repo_file_contents_to_tmp_file "${source_file}" "${tmp_file}"
+    # Update the temporary file
+    update_tmp_file "${tmp_file}"
+    # Update the repository file contents
+    update_repo_file_contents "${tmp_file}" "${file_sha}" "${source_file}"
+
+    # Remove the temporary file
+    if [[ -f "${tmp_file}" ]]; then
+      rm -f "${tmp_file}"
+      echo "${YUP} Temporary file ${tmp_file} has been deleted"
+      echo
+    fi
+  done
+  echo "${OK} The repo '${TARGET_REPOS[0]}' has been updated"
+}
+
+# Updates the default repository permission setting for the GitHub organization.
+# This function sets the default permission that new repositories will have when
+# created within the organization. It uses the GitHub API to patch the
+# organization's settings.
+# Usage: update_org_default_repo_permission
+update_org_default_repo_permission() {
+
+  local repo_permission="${GH_ORG_DEFAULT_REPOSITORY_PERMISSION}"
+
+  # Update the organization settings
+  gh api \
+     --method PATCH \
+     --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+     --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+     /orgs/"${GH_ORG_NAME}" \
+     --raw-field default_repository_permission="${repo_permission}" \
+     --silent
+
+  ## Check whether the operation was successful
+  if [[ $? -eq 0 ]]; then
+    echo -n "${OK} The '${GH_ORG_NAME}' organization default repo permission "
+    echo  "setting has been updated with '${repo_permission}' value"
+  else
+    echo -n "${ERR} An error occurred while updating the '${GH_ORG_NAME}' " >&2
+    echo -n "organization default repo permission setting with " >&2
+    echo "'${repo_permission}' value" >&2
+    exit 1
+  fi
+}
+
+# Updates the organization setting to allow or disallow members from forking
+# private repositories. This function configures whether members of the GitHub
+# organization can fork private repositories. It performs a PATCH request to
+# the GitHub API to update the organization's settings accordingly.
+# Usage: update_org_members_can_fork_private_repo
+update_org_members_can_fork_private_repo() {
+
+  local fork_private="${GH_ORG_MEMBERS_CAN_FORK_PRIVATE_REPOSITORIES}"
+
+  # Update the organization settings
+  gh api \
+     --method PATCH \
+     --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+     --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+     /orgs/"${GH_ORG_NAME}" \
+     --field members_can_fork_private_repositories="${fork_private}" \
+     --silent
+
+  ## Check whether the operation was successful
+  if [[ $? -eq 0 ]]; then
+    echo -n "${OK} The ${GH_ORG_NAME} organization 'members can fork private repo'"
+    echo "setting has been updated with '${fork_private}' value"
+  else
+    echo -n "${ERR} An error occurred while updating the '${GH_ORG_NAME}' " >&2
+    echo -n "organization 'members can fork private repo' setting with " >&2
+    echo "'${fork_private}' value" >&2
+    exit 1
+  fi
+}
+
+# Creates a new team within the GitHub organization. This function uses the
+# GitHub API to create a team with the specified details. It requires the
+# organization name, team name, description, notification setting, and privacy
+# level.
+# Usage: create_team
+create_team() {
+  # Local variable declaration for the return value
+  local team_id
+
+  # Retrieve the team ID
+  team_id=$(get_team_id)
+
+  if [[ $? -eq 0 ]]; then
+    if [[ -n "${team_id}" ]]; then
+      echo -n "${WRN} The '${GH_TEAM_NAME}' team already exists "
+      echo "in the '${GH_ORG_NAME}' organization."
+      return 0
+    fi
+  else
+    echo "${team_id}" >&2
+    exit 1
+  fi
+
+  # Creating the team
+  gh api \
+     --method POST \
+     --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+     --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+     /orgs/"${GH_ORG_NAME}"/teams \
+     --raw-field name="${GH_TEAM_NAME}" \
+     --raw-field description="${GH_TEAM_DESCRIPTION}" \
+     --raw-field notification_setting="${GH_TEAM_NOTIFICATIONS}" \
+     --raw-field privacy="${GH_TEAM_PRIVACY}" \
+     --silent
+
+  # Checking if the operation was successful
+  if [[ $? -eq 0 ]]; then
+    echo -n "${OK} The team '${GH_TEAM_NAME}' has been created "
+    echo "in the organization '${GH_ORG_NAME}'."
+  else
+    echo "${ERR} An error occurred while creating the team '${GH_TEAM_NAME}'." >&2
+    exit 1
+  fi
+}
+
+# Creates a new project in the GitHub organization from a specified template.
+# It's intended to copy a project from another source into the target
+# organization under a new title. Usage: create_project_from_template
+create_project_from_template() {
+
+  local project_number
+
+  project_number=$(get_project_number)
+  if [[ $? -eq 0 ]]; then
+    if [[ -n "${project_number}" ]]; then
+      echo -n "${WRN} Project with the '${TARGET_PROJECT_TITLE}' title "
+      echo "already exists in the '${GH_ORG_NAME}' organization."
+      return 0
+    fi
+  else
+    echo "${project_number}" >&2
+    exit 1
+  fi
+
+  gh project copy "${SOURCE_PROJECT_NUMBER}" \
+     --source-owner "${SOURCE_PROJECT_OWNER}" \
+     --target-owner "${GH_ORG_NAME}" \
+     --title "${TARGET_PROJECT_TITLE}"
+
+  if [[ $? -eq 0 ]]; then
+    echo "${OK} The project '${TARGET_PROJECT_TITLE}' has been created."
+  else
+    echo -n "${ERR} An error occurred while copying the project " >&2
+    echo "from ${SOURCE_PROJECT_OWNER} to '${GH_ORG_NAME}'." >&2
+    exit 1
+  fi
+}
+
+# Clones the specified repositories from the GitHub organization to the local
+# machine. Iterates through the list of target repositories and clones each one
+# using the 'gh repo clone' command.
+# Usage: clone_repositories
+clone_repositories() {
+  # Iterate through repositories
+  for ((i=0; i<"${#TARGET_REPOS[@]}"; i++)); do
+
+    # Check if the repository directory already exists
+    if [[ -d "${TARGET_REPOS[i]}" ]]; then
+      echo -n "${WRN} Skipping cloning ${TARGET_REPOS[i]} because repository "
+      echo "directory already exists."
+      continue # Skip to the next repository
+    fi
+
+    gh repo clone "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}"
+
+    if [[ $? -ne 0 ]]; then
+      echo -n "${ERR} An error occurred while cloning the " >&2
+      echo "${GH_ORG_NAME}/${TARGET_REPOS[i]} repository" >&2
+      exit 1
+    fi
+  done
+  echo "${OK} Cloning repositories has been completed"
+}
+
+# Sets a specific team as the CODEOWNERS for all targeted repositories. This
+# function iterates through the list of repositories, excluding the first one,
+# and updates the CODEOWNERS file to reflect the designated team. It checks if
+# the CODEOWNERS file is writable before attempting to update it.
+# Usage: set_team_as_codeowners
+set_team_as_codeowners() {
+
+  # Iterate through repositories, starting from the second one because the first
+  # one does not have a 'CODEOWNERS' file
+  for ((i=1; i<"${#TARGET_REPOS[@]}"; i++)); do
+
+    local file_path="${TARGET_REPOS[i]}/.github/CODEOWNERS"
+
+    if [[ ! -w "${file_path}" ]]; then
+      # Because we have 'exit 1' here, the trap won't be activated.
+      echo -n "${ERR} The file ${file_path} does not exist " >&2
+      echo "or is not writable." >&2
+      exit 1
+    fi
+
+    # Overwrite the first line in the CODEOWNERS file
+    echo "* @${GH_ORG_NAME}/${GH_TEAM_NAME}" > "${file_path}"
+
+    echo -n "${YUP} The CODEOWNERS file in '${TARGET_REPOS[i]}' "
+    echo "has been updated to ${GH_ORG_NAME}/${GH_TEAM_NAME}."
+  done
+  echo "${OK} The configuration of the 'CODEOWNERS' files has been completed."
+}
+
+# Commits changes in local repositories and pushes them to their remote
+# counterparts. This function iterates through the repositories, excluding the
+# first one, to commit any changes made, specifically after updating CODEOWNERS
+# or similar files, and then pushes these changes to the remote repository. It
+# uses a custom 'git_with_dir' function to specify the git directory and work
+# tree for each operation. Usage: commit_changes_and_push_to_remote_repos
+commit_changes_and_push_to_remote_repos() {
+  # Set the commit message
+  local commit_message="Assign ${GH_TEAM_NAME} as the code owners."
+
+  # Function to execute git commands with specified git dir and work tree
+  git_with_dir() {
+    git --git-dir="$1/.git" --work-tree="$1" "${@:2}"
+  }
+
+  # Iterate through repositories, starting from the second one because in the first
+  # one we do not change any file.
+  for ((i=1; i<"${#TARGET_REPOS[@]}"; i++)); do
+    local target_repo="${TARGET_REPOS[i]}"
+
+    if [[ ! -d "${target_repo}" ]]; then
+      # Because we have 'exit 1' here, the trap won't be activated.
+      echo -n "${ERR} The directory ${target_repo} does not exist." >&2
+      echo "Clone repositories first." >&2
+      exit 1
+    fi
+
+    # Add changes to the staging area
+    git_with_dir "${target_repo}" add .
+
+    # Check if there are changes to commit
+    if git_with_dir "${target_repo}" diff --staged --quiet; then
+      echo -n "${WRN} The ${target_repo} repository doesn't have "
+      echo "any changes to commit."
+    else
+      # Commit the changes
+      git_with_dir "${target_repo}" commit -m "${commit_message}"
+
+      # Push the changes to the remote repository
+      git_with_dir "${target_repo}" push origin "${GH_REPO_BRANCH}"
+
+      echo -n "${YUP} Changes made in the ${target_repo} directory "
+      echo "have been pushed to the remote repository."
+    fi
+  done
+  echo "${OK} Updating remote repositories has been completed."
+}
+
+# Applies branch protection rules to lock branches for specified repositories
+# within a GitHub organization.  It iterates over the repositories, starting
+# from the second, to apply a "lock branch" rule, which prevents direct pushes
+# to the specified branches, requiring pull requests for changes.
+# Usage: lock_branch
+lock_branch() {
+  # Iterate through the repositories, starting from the second one because the
+  # first one does not contain assignments for students and so does not need the
+  # branch to be locked
+  for ((i=1; i<"${#TARGET_REPOS[@]}"; i++)); do
+
+    # Branch protection rule setup: lock branch
+    gh api \
+       --method PUT \
+       --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+       --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+       repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[i]}"/branches/"${GH_REPO_BRANCH}"/protection \
+       --field required_status_checks='null' \
+       --field enforce_admins='null' \
+       --field required_pull_request_reviews='null' \
+       --field restrictions='null' \
+       --field lock_branch='true' \
+       --silent
+
+    # Check whether the operation was completed
+    if [[ $? -eq 0 ]]; then
+      echo -n "${YUP} The branch protection rule 'lock branch' "
+      echo -n "for the '${GH_REPO_BRANCH}' branch on the repository "
+      echo "${GH_ORG_NAME}/${TARGET_REPOS[i]} has been set."
+    else
+      echo "${ERR} An error occurred while setting branch protection rule." >&2
+      exit 1
+    fi
+  done
+  echo "${OK} Branch protection rule 'lock branch ' setup completed."
+}
+
+# Enforces a branch protection rule requiring conversation resolution before
+# merging pull requests. This function iterates through the repositories,
+# excluding the first, to apply this specific rule.  It ensures all discussions
+# are resolved before allowing merges, enhancing collaboration quality.
+# Usage: require_conversation_resolution_before_merging
+require_conversation_resolution_before_merging() {
+  # Iterate through the repositories, starting from the second one because the
+  # first one does not contain assignments for students and so does not need the
+  # branch rule to be set to 'require conversation resolution before merging'.
+  for ((i=1; i<"${#TARGET_REPOS[@]}"; i++)); do
+
+    # Branch protection rule setup: Require conversation resolution before merging
+    gh api \
+       --method PUT \
+       --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+       --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+       repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[i]}"/branches/"${GH_REPO_BRANCH}"/protection \
+       --field required_status_checks='null' \
+       --field enforce_admins='null' \
+       --field required_pull_request_reviews='null' \
+       --field restrictions='null' \
+       --field required_conversation_resolution='true' \
+       --silent
+
+    # Check whether the operation was successful
+    if [[ $? -eq 0 ]]; then
+      echo -n "${YUP} The branch protection rule "
+      echo -n "'Require conversation resolution before merging' for the "
+      echo -n "'${GH_REPO_BRANCH}' branch on the repository "
+      echo "${GH_ORG_NAME}/${TARGET_REPOS[i]} has been set."
+    else
+      echo -n "${ERR} An error occurred while setting up " >&2
+      echo "the branch protection rule." >&2
+      exit 1
+    fi
+  done
+  echo -n "${OK} Branch protection rule "
+  echo "'Require conversation resolution before merging' setup completed."
+}
+
+
+# Retrieves the unique ID of a project by its title within a GitHub
+# organization.  This ID is essential for operations that modify project
+# settings or link the project to other entities. The function lists all
+# projects under the specified organization and filters by title to find the
+# correct project ID. Usage: get_project_id
+get_project_id() {
+  # Local variable declaration for the return value
+  local project_id
+
+  # List projects under a specific organization and extract the project ID using
+  # jq based on the title.
+  project_id=$(gh project list \
+                  --owner "${GH_ORG_NAME}" \
+                  --format 'json' \
+                  --jq ".projects[] | select(.title == \"${TARGET_PROJECT_TITLE}\") | .id")
+
+  if [[ $? -eq 0 ]]; then
+      echo "${project_id}"
+  else
+    echo -n "${ERR} An error occurred while obtaining the ID of the "
+    echo -n "'${TARGET_PROJECT_TITLE}' project from the '${GH_ORG_NAME}' "
+    echo "organization."
+    exit 1
+  fi
+}
+
+# Retrieves the unique ID of a team by its name within a GitHub organization.
+# This ID is used for assigning permissions or linking the team to projects and
+# repositories. The function uses a GraphQL query to fetch the team ID based on
+# the provided team name.
+# Usage: get_team_id
+get_team_id() {
+  # Local variable declaration for the return value
+  local team_id
+
+  # Define a GraphQL query to retrieve the team ID from the GitHub API.
+  local query="
+  {
+    organization(login: \"${GH_ORG_NAME}\") {
+      team(slug: \"${GH_TEAM_NAME}\") {
+        id
+      }
+    }
+  }
+  "
+
+  # Execute the GraphQL query and extract the team ID using
+  # jq.
+  team_id=$(gh api graphql \
+               --raw-field query="${query}" \
+               --jq '.data.organization.team.id')
+
+  if [[ $? -eq 0 ]]; then
+    echo "${team_id}"
+  else
+    echo -n "${ERR} An error occurred while obtaining the ID of the "
+    echo "'${GH_TEAM_NAME}' team from the '${GH_ORG_NAME}' organization"
+    exit 1
+  fi
+}
+
+# Links a specific project to a specific team within a GitHub organization.
+# This association allows for refined permission management and project access
+# control. The function retrieves both the project ID and team ID, then uses a
+# GraphQL mutation to create the link. Usage: link_project_to_team
+link_project_to_team() {
+  # Local variable declarations
+  local project_id
+  local team_id
+
+  # Retrieve the project ID.
+  project_id=$(get_project_id)
+
+  if [[ $? -eq 0 ]]; then
+    if [[ -n "${project_id}" ]]; then
+      echo -n "${YUP} Obtaining the ID of the '${TARGET_PROJECT_TITLE}' project"
+      echo " has been completed"
+    else
+      echo -n "${WRN} The obtained ID of the '${TARGET_PROJECT_TITLE}' project "
+      echo -n "is empty: the '${GH_ORG_NAME}' organization has no such project. "
+      echo -n "Check the 'user_config' file to see if you have entered "
+      echo "the 'GH_ORG_NAME' and 'TARGET_PROJECT_TITLE' correctly."
+      exit 1
+    fi
+  else
+    echo "${project_id}" >&2
+    exit 1
+  fi
+
+  # Retrieve the team ID
+  team_id=$(get_team_id)
+
+  if [[ $? -eq 0 ]]; then
+    if [[ -n "${team_id}" ]]; then
+      echo -n "${YUP} Obtaining the ID of the '${GH_TEAM_NAME}' team"
+      echo " has been completed"
+    else
+      echo -n "${ERR} The obtained ID of the '${GH_TEAM_NAME}' team " >&2
+      echo -n "is empty: the '${GH_ORG_NAME}' organization has no such team. " >&2
+      echo -n "Check the 'user_config' file to see if you have entered " >&2
+      echo "the 'GH_ORG_NAME' and 'GH_TEAM_NAME' correctly." >&2
+      exit 1
+    fi
+  else
+    echo "${team_id}" >&2
+    exit 1
+  fi
+
+  # Define a GraphQL mutation to link the project to the team.
+  local query="
+    mutation {
+      linkProjectV2ToTeam(input: {
+        teamId: \"${team_id}\",
+        projectId: \"${project_id}\",
+      }) {
+          clientMutationId
+         }
+    }
+    "
+
+  # Execute the GraphQL mutation using the GitHub CLI.
+  gh api graphql \
+     --raw-field query="${query}" \
+     --silent
+
+  # Check the exit status of the last command to verify if the link operation
+  # was successful.
+  if [[ $? -eq 0 ]]; then
+    echo -n "${OK} The '${TARGET_PROJECT_TITLE}' project has been linked "
+    echo "to the '${GH_TEAM_NAME}' team"
+  else
+    echo -n "${ERR} An error occurred while linking the " >&2
+    echo "'${TARGET_PROJECT_TITLE}' project to the '${GH_TEAM_NAME}' team" >&2
+    exit 1
+  fi
+}
+
+# Fetches the unique ID of a GitHub user based on their login. This function is
+# crucial for operations that require user identification, such as assigning
+# roles or permissions. It verifies the provided argument and utilizes a
+# GraphQL query to retrieve the user ID.
+get_user_id() {
+  # Check if the correct number of non-empty arguments is passed
+  if [[ "$#" -ne 1 || -z "$1" ]]; then
+    echo "${ERR} Invalid number of arguments or empty argument." >&2
+    echo "${WRN} Usage: ${FUNCNAME[0]} <github_login>"
+    exit 1
+  fi
+
+  local gh_login="$1"
+
+  # Local variable declaration for the return value
+  local user_id
+
+  local query="
+  {
+    user(login: \"${gh_login}\") {
+      id
+    }
+  }
+  "
+
+  user_id=$(gh api graphql \
+               --raw-field query="${query}" \
+               --jq '.data.user.id')
+
+  if [[ $? -eq 0 ]]; then
+    if [[ -n "${user_id}" ]]; then
+      echo "${user_id}"
+    else
+      echo -n "${ERR} The obtained ID of the '${gh_login}' user "
+      echo -n "is empty: the '${gh_login}' user does not exist. "
+      echo -n "Check the 'user_config' file to see if you have entered "
+      echo "the 'GH_TEAM_MEMBERS_EXCLUDED_FROM_REVIEWING' correctly."
+      exit 1
+    fi
+  else
+    echo -n "${ERR} An error occurred while obtaining the ID "
+    echo "of the '${gh_login}' user."
+    exit 1
+  fi
+}
+
+# Enables automatic review assignment for a specified team within a GitHub
+# organization. Iterates through GitHub user logins provided to exclude specific
+# team members from automatic review assignments. Utilizes GraphQL to update
+# team review assignment settings, including excluded members, algorithm, and
+# notification preferences.
+# Usage: enable_team_review_assignment
+enable_team_review_assignment() {
+  # Local variable declaration
+  local github_logins=("${GH_TEAM_MEMBERS_EXCLUDED_FROM_REVIEWING[@]}")
+  local team_id
+  local -a user_ids  # the array of GitHub user IDs
+  local fetched_user_id
+  local users_id_string
+
+  team_id=$(get_team_id)
+
+  if [[ $? -eq 0 ]]; then
+    if [[ -n "${team_id}" ]]; then
+      echo -n "${YUP} Obtaining the ID of the '${GH_TEAM_NAME}' team"
+      echo " has been completed"
+    else
+      echo -n "${ERR} The obtained ID of the '${GH_TEAM_NAME}' team " >&2
+      echo -n "is empty: the '${GH_ORG_NAME}' organization has no such team. " >&2
+      echo -n "Check the 'user_config' file to see if you have entered " >&2
+      echo "the 'GH_ORG_NAME' and 'GH_TEAM_NAME' correctly." >&2
+      exit 1
+    fi
+  else
+    echo "${team_id}" >&2
+    exit 1
+  fi
+
+  # Loop through all logins and execute a GraphQL query for each of them
+  for gh_login in "${github_logins[@]}"; do
+    fetched_user_id=$(get_user_id "${gh_login}")
+    if [[ $? -eq 0 ]]; then
+      user_ids+=("\"$fetched_user_id\"")  # Adding ID as a string to the array
+      echo -n "${YUP} Obtaining the ID of the '${gh_login}' "
+      echo "user has been completed"
+    else
+      echo "${fetched_user_id}" >&2
+      exit 1
+    fi
+  done
+
+  # TODO:
+  # add checking that the user belongs to the organization
+  # END:
+
+  # Add comma between user IDs
+  users_id_string=$(IFS=,; echo "${user_ids[*]}")
+
+  # Define the GraphQL mutation for updating team review assignment settings.
+  local query="
+    mutation {
+      updateTeamReviewAssignment(input: {
+        algorithm: ${GH_TEAM_REVIEW_ASSIGNMENT_ALGORITHM},
+        enabled: true,
+        excludedTeamMemberIds: [${users_id_string}],
+        id: \"${team_id}\",
+        notifyTeam: ${GH_TEAM_NOTIFY},
+        teamMemberCount: ${GH_TEAM_MEMBER_COUNT},
+      }) {
+           clientMutationId
+         }
+    }
+    "
+
+  # Execute the GraphQL mutation
+  gh api graphql \
+     --header "Accept: application/vnd.github.stone-crop-preview+json" \
+     --raw-field query="${query}" \
+     --silent
+
+  # Check whether the operation was successful
+  if [[ $? -eq 0 ]]; then
+    echo -n "${OK} The review assignment has been enabled "
+    echo "for the '${GH_TEAM_NAME}' team"
+  else
+    echo -n "${ERR} An error occurred while enabling the review " >&2
+    echo "assignment for the '${GH_TEAM_NAME}' team" >&2
+    exit 1
+  fi
+}
+
+# Retrieves the numeric ID of a team within a GitHub organization. This ID is
+# essential for certain API calls that require team identification. The script
+# uses the GitHub CLI to query the GitHub API and extract the team's numeric ID.
+# Usage: get_team_number
+get_team_number() {
+  # Local variable declaration for the return value
+  local team_number
+
+  # Retrieve the team number
+  team_number=$(gh api \
+                   --method GET \
+                   --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+                   --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+                   /orgs/"${GH_ORG_NAME}"/teams/"${GH_TEAM_NAME}" \
+                   --jq '.id')
+
+  if [[ $? -eq 0 ]]; then
+    echo "${team_number}"
+  else
+    echo -n "${ERR} An error occurred while obtaining the number of the "
+    echo "'${GH_TEAM_NAME}' team from the '${GH_ORG_NAME}' organization."
+    exit 1
+  fi
+}
+
+# Invites users to a specified team within a GitHub organization based on email
+# addresses. This script reads email addresses from a file named 'emails.txt',
+# constructs and sends invitation requests for each.
+# Usage: invite_to_organization_team
+invite_to_organization_team() {
+  # Check if the file with emails exists and is readable
+  if [[ ! -r 'emails.txt' ]]; then
+    echo "${ERR} The file 'emails.txt' is not readable or does not exist." >&2
+    exit 1
+  fi
+
+  # Local variable declaration
+  local team_number
+  local response
+  local http_status
+  local email
+
+  # Get the team ID
+  team_number=$(get_team_number)
+  if [[ $? -eq 0 ]]; then
+    echo -n "${YUP} Obtaining the ID of the '${GH_TEAM_NAME}' team"
+    echo " has been completed"
+  else
+    echo "${team_number}" >&2
+    exit 1
+  fi
+
+  # Reading from a file
+  while IFS= read -r email; do
+
+  # Sending an invitation
+  response=$(gh api \
+                --method POST \
+                --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+                --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+                /orgs/"${GH_ORG_NAME}"/invitations \
+                --raw-field email="${email}" \
+                --raw-field role="${GH_ORG_ROLE}" \
+                --field "team_ids[]=${team_number}" \
+                --include)
+
+  # Check whether the operation was successful
+  if [[ $? -eq 0 ]]; then
+    echo "${YUP} Invitation to join the '${GH_ORG_NAME}' sent to: ${email}."
+  else
+    # Extract the HTTP status code from the first line of the 'response' and and
+    # look for '422'
+    http_status=$(echo "${response}" | grep --max-count=1 -o '422')
+
+    if [[ "${http_status}" -eq 422 ]]; then
+      echo -n "${WRN} The invitation to '${email}' has not been sent. The email "
+      echo -n "address is not valid, or the variable 'GH_ORG_ROLE' from "
+      echo -n "'system_config.sh' is not valid, or the user with this email may "
+      echo -n "already be a member of the '${GH_ORG_NAME}' organization. If the "
+      echo -n "latter, add the user to the '${GH_TEAM_NAME}' team manually or send "
+      echo -n "the link https://github.com/orgs/${GH_ORG_NAME}/teams/${GH_TEAM_NAME}"
+      echo " to the user so he/she can request to join the team."
+    else
+      echo -n "${ERR} Failed to send the '${GH_ORG_NAME}' invitation " >&2
+      echo "to: ${email}" >&2
+      exit 1
+    fi
+  fi
+  done < 'emails.txt'
+}
+
+get_invitation_id_by_email() {
+  # Check if the correct number of non-empty arguments is passed
+  if [[ "$#" -ne 1 || -z "$1" ]]; then
+    echo "${ERR} Invalid number of arguments or empty argument." >&2
+    echo "${WRN} Usage: ${FUNCNAME[0]} <email>"
+    exit 1
+  fi
+
+  # local variable declaration
+  local email="$1"
+  local invitation_id
+
+  # Fetch all pending invitations and find the one matching the email
+  invitation_id=$(gh api \
+                     --method GET \
+                     --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+                     --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+                     /orgs/"${GH_ORG_NAME}"/invitations \
+                     --jq ".[] | select(.email==\"${email}\") | .id")
+
+  if [[ $? -eq 0 ]]; then
+    echo "${invitation_id}"
+  else
+    echo -n "${ERR} An error occurred while obtaining the id of invitation to "
+    echo "'${GH_ORG_NAME}' organization."
+    exit 1
+  fi
+}
+
+cancel_invitations_to_organization() {
+  # Check if the file with emails exists and is readable
+  if [[ ! -r 'emails.txt' ]]; then
+    echo "${ERR} The file 'emails.txt' is not readable or does not exist." >&2
+    exit 1
+  fi
+
+  # Local variable declaration
+  local email
+  local invitation_id
+
+  # Reading from a file
+  while IFS= read -r email; do
+    # Fetch all pending invitations and find the one matching our email
+    invitation_id=$(get_invitation_id_by_email "${email}")
+    if [[ $? -eq 0 ]]; then
+      if [[ -z "${invitation_id}" ]]; then
+	echo "${WRN} No pending invitation found for: ${email}."
+	continue
+      fi
+    else
+      echo "${invitation_id}" >&2
+      exit 1
+    fi
+
+    # Cancel the invitation
+    gh api \
+       --method DELETE \
+       /orgs/"${GH_ORG_NAME}"/invitations/"${invitation_id}" \
+       --silent
+
+    if [[ $? -eq 0 ]]; then
+      echo "${YUP} Cancelled the invitation for: '${email}'."
+    else
+      echo "${ERR} Failed to cancel the invitation for: '${email}'." >&2
+    fi
+  done < 'emails.txt'
+}
+
+# Retrieves the project ID for a specified project title within a GitHub
+# organization.
+# Usage: get_project_number
+get_project_number() {
+  # Local variable declaration for the return value
+  local project_number
+
+  # List projects under a specific organization and extract the project ID using
+  # jq based on the title.
+  project_number=$(gh project list \
+                  --owner "${GH_ORG_NAME}" \
+                  --format 'json' \
+                  --jq ".projects[] | select(.title == \"${TARGET_PROJECT_TITLE}\") | .number")
+
+  if [[ $? -eq 0 ]]; then
+    echo "${project_number}"
+  else
+    echo -n "${ERR} An error occurred while obtaining the number of the "
+    echo -n "'${TARGET_PROJECT_TITLE}' project from the '${GH_ORG_NAME}' "
+    echo "organization."
+    exit 1
+  fi
+}
+
+# Fetches and saves the project's data as a JSON file, named with the project
+# title and current timestamp.
+# Usage: get_project_data_as_json
+get_project_data_as_json() {
+  # Local variable declaration
+  local project_number
+
+  timestamp=$(date "+%F-%H-%M-%S")
+  filename="logs/${TARGET_PROJECT_TITLE}-${timestamp}.json"
+
+  # Check if the file can be created
+  if [[ -f "${filename}" ]]; then
+    echo "${ERR} File '${filename}' already exists." >&2
+    exit 1
+  elif ! touch "${filename}" &>/dev/null; then
+    echo -n "${ERR} File '${filename}' cannot be created. " >&2
+    echo "Check permissions or disk space." >&2
+    exit 1
+  fi
+
+  project_number=$(get_project_number)
+  if [[ $? -eq 0 ]]; then
+    if [[ -n "${project_number}" ]]; then
+      echo -n "${YUP} Obtaining the number of the '${TARGET_PROJECT_TITLE}' "
+      echo "project has been completed"
+    else
+      echo -n "${WRN} The '${TARGET_PROJECT_TITLE}' project within the "
+      echo -n "'${GH_ORG_NAME}' organization might have been closed or "
+      echo -n "does not exist, as the obtained number for this project "
+      echo -n "is empty: the '${GH_ORG_NAME}' organization has no such "
+      echo -n "open project. Check the 'user_config' file to ensure "
+      echo -n "that you have correctly entered 'GH_ORG_NAME' and "
+      echo "'TARGET_PROJECT_TITLE'."
+      exit 1
+    fi
+  else
+    echo "${project_number}" >&2
+    exit 1
+  fi
+
+  # Retrieves the project items list and saves it as a JSON file.
+  gh project item-list "${project_number}" \
+    --owner "${GH_ORG_NAME}" \
+    --limit "${GH_PROJECT_MAX_ITEM}" \
+    --format json | jq '.' > "${filename}"
+
+  if [[ $? -eq 0 ]]; then
+    echo -n "${OK} The project '${TARGET_PROJECT_TITLE}' has been logged "
+    echo "to the file: ${filename}"
+  else
+    echo -n "${ERR} An error occurred while logging the project " >&2
+    echo "'${TARGET_PROJECT_TITLE}'" >&2
+    exit 1
+  fi
+}
+# Closes a specified project within a GitHub organization.
+# Usage: close_project
+close_project() {
+  # Local variable declaration
+  local project_number
+
+  project_number=$(get_project_number)
+  if [[ $? -eq 0 ]]; then
+    if [[ -n "${project_number}" ]]; then
+      echo -n "${YUP} Obtaining the number of the '${TARGET_PROJECT_TITLE}' "
+      echo "project has been completed"
+    else
+      echo -n "${WRN} The '${TARGET_PROJECT_TITLE}' project within the "
+      echo -n "'${GH_ORG_NAME}' organization might have been closed or "
+      echo -n "does not exist, as the obtained number for this project "
+      echo -n "is empty: the '${GH_ORG_NAME}' organization has no such "
+      echo -n "open project. Check the 'user_config' file to ensure "
+      echo -n "that you have correctly entered 'GH_ORG_NAME' and "
+      echo "'TARGET_PROJECT_TITLE'."
+      exit 1
+    fi
+  else
+    echo "${project_number}" >&2
+    exit 1
+  fi
+
+  # Close the specified project.
+  gh project close "${project_number}" \
+     --owner "${GH_ORG_NAME}"
+
+  if [[ $? -eq 0 ]]; then
+    echo "${OK} The project '${TARGET_PROJECT_TITLE}' has been closed"
+  else
+    echo -n "${ERR} An error occurred while closing the project " >&2
+    echo "'${TARGET_PROJECT_TITLE}'" >&2
+    exit 1
+  fi
+}
+
+# Delete project TARGET_PROJECT_TITLE defined in user_config.sh file from
+# GH_ORG_NAME. Usage: delete_project
+delete_project() {
+  # Local variable declaration
+  local project_number
+
+  project_number=$(get_project_number)
+  if [[ $? -eq 0 ]]; then
+    if [[ -n "${project_number}" ]]; then
+      echo -n "${YUP} Obtaining the number of the '${TARGET_PROJECT_TITLE}' "
+      echo "project has been completed"
+    else
+      echo -n "${WRN} The '${TARGET_PROJECT_TITLE}' project within the "
+      echo -n "'${GH_ORG_NAME}' organization might have been closed or "
+      echo -n "does not exist, as the obtained number for this project "
+      echo -n "is empty: the '${GH_ORG_NAME}' organization has no such "
+      echo -n "open project. Check the 'user_config' file to ensure "
+      echo -n "that you have correctly entered 'GH_ORG_NAME' and "
+      echo "'TARGET_PROJECT_TITLE'."
+      exit 1
+    fi
+  else
+    echo "${project_number}" >&2
+    exit 1
+  fi
+
+  # deleting a project
+  gh project delete "${project_number}" \
+     --owner "${GH_ORG_NAME}"
+
+  if [[ $? -ne 0 ]]; then
+    echo -n "${ERR} An error occurred while deleting the " >&2
+    echo "'${TARGET_PROJECT_TITLE}' from '${GH_ORG_NAME}'" >&2
+    exit 1
+  fi
+  echo -n "${OK} Deletion of the '${TARGET_PROJECT_TITLE}' project "
+  echo "has been completed."
+}
+
+
+# Creates a set of private repositories from templates without cloning them.
+# Usage: create_repo_from_template
+create_repo_from_template() {
+  # Iterate through the source repositories and create private repositories from
+  # templates
+  for ((i=0; i<"${#SOURCE_REPOS[@]}"; i++)); do
+
+    # Create private repo from the template without cloning it.
+    gh repo create "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}" \
+       --private \
+       --template "${GH_ORG_NAME}"/"${SOURCE_REPOS[i]}" \
+       --clone=false
+
+    if [[ $? -ne 0 ]]; then
+      echo -n "${ERR} An error occurred while creating the " >&2
+      echo "${GH_ORG_NAME}/${TARGET_REPOS[i]} repo from the " >&2
+      echo "${GH_ORG_NAME}/${SOURCE_REPOS[i]} template" >&2
+      exit 1
+    fi
+  done
+  echo "${OK} Creating repos from templates has been completed"
+}
+
+# Assigns a repository to a specific team within the GitHub organization.
+# Usage: assign_repo_to_team
+assign_repo_to_team() {
+  # Assigning a first argument to a local variable
+  local repo="$1"
+
+  # Add a repository to the team
+  gh api \
+     --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+     --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+     --method PUT \
+     /orgs/"${GH_ORG_NAME}"/teams/"${GH_TEAM_NAME}"/repos/"${GH_ORG_NAME}"/"${repo}" \
+     --raw-field permission="${GH_TEAM_REPO_PERMISSION}" \
+     --silent
+
+  # Check if the command succeeded
+  if [[ $? -eq 0 ]]; then
+    echo -n "Repository '${repo}' was successfully added to "
+    echo "the '${GH_TEAM_NAME}' team."
+  else
+    echo -n "${ERR} An error occurred while adding the repository '${repo}' " >&2
+    echo "to the '${GH_TEAM_NAME}' team in the '${GH_ORG_NAME}' organization." >&2
+    exit 1
+  fi
+}
+
+# Removes a repository from a specific team within the GitHub organization.
+# Usage: remove_repo_from_team <repository_name>
+remove_repo_from_team() {
+  # Assigning the first argument to a local variable
+  local repo="$1"
+
+  # Remove the repository from the team
+  gh api \
+     --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+     --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+     --method DELETE \
+     /orgs/"${GH_ORG_NAME}"/teams/"${GH_TEAM_NAME}"/repos/"${GH_ORG_NAME}"/"${repo}" \
+     --silent
+
+  # Check if the command succeeded
+  if [[ $? -eq 0 ]]; then
+    echo -n "${YUP} Repository '${repo}' was successfully removed from "
+    echo "the '${GH_TEAM_NAME}' team."
+  else
+    echo -n "${ERR} An error occurred while removing the repository '${repo}' " >&2
+    echo "from the '${GH_TEAM_NAME}' team in the '${GH_ORG_NAME}' organization." >&2
+    exit 1
+  fi
+}
+
+# Get the team's repositories list. Usage: get_team_repos_list
+get_team_repos_list() {
+
+  # Declare a local variable for the api response to avoid printing potential
+  # errors to the pager; instead, we print them directly to the console.
+  local response
+
+  # API request for a team's repos list
+  response=$(gh api \
+     --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+     --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+     --method GET \
+     /orgs/"${GH_ORG_NAME}"/teams/"${GH_TEAM_NAME}"/repos \
+     --paginate \
+     --jq '.[].name')
+
+  # Check if the command succeeded
+  if [[ $? -eq 0 ]]; then
+    echo "${response}"
+  else
+    echo -n "${ERR} An error occurred while getting the repository list of " >&2
+    echo "the '${GH_TEAM_NAME}' team in the '${GH_ORG_NAME}' organization." >&2
+    exit 1
+  fi
+}
+
+get_team_members_list() {
+
+  # Expect exactly one argument: name of output array
+  if [[ "$#" -ne 1 || -z "$1" ]]; then
+    echo "${ERR} Usage: ${FUNCNAME[0]} <output_array_name>" >&2
+    exit 1
+  fi
+
+  # Name reference to caller's array
+  local -n _team_members="$1"
+  local status
+
+  mapfile -t _team_members < <(
+    gh api \
+       --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+       --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+       --method GET \
+       /orgs/"${GH_ORG_NAME}"/teams/"${GH_TEAM_NAME}"/members \
+       --paginate \
+       --jq '.[].login'
+  )
+  status=$?
+
+  if [[ $status -ne 0 ]]; then
+    echo -n "${ERR} An error occurred while obtaining the members list of " >&2
+    echo "the '${GH_TEAM_NAME}' team from the '${GH_ORG_NAME}' organization." >&2
+    exit 1
+  fi
+}
+
+get_team_member_role() {
+
+  # Check if the correct number of non-empty arguments is passed
+  if [[ "$#" -ne 1 || -z "$1" ]]; then
+    echo "${ERR} Invalid number of arguments or empty argument." >&2
+    echo "${WRN} Usage: ${FUNCNAME[0]} <user_nickname>"
+    exit 1
+  fi
+
+  local member="$1"
+  # Declare a local variable for the return value
+  local member_role
+
+  member_role=$(gh api \
+                --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+                --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+                --method GET \
+                /orgs/"${GH_ORG_NAME}"/teams/"${GH_TEAM_NAME}"/memberships/"${member}" \
+                --jq '.role')
+
+  if [[ $? -eq 0 ]]; then
+    echo "${member_role}"
+  else
+    echo -n "${ERR} An error occurred while obtaining the '${GH_TEAM_NAME}'"
+    echo " team member role in the '${GH_ORG_NAME}' organization. "
+    exit 1
+  fi
+}
+
+remove_team_members_from_org() {
+
+  local -a team_members
+  local member_role
+
+  # Fill array by reference
+  get_team_members_list team_members
+
+  echo -n "${YUP} Obtaining the members list of the '${GH_TEAM_NAME}' "
+  echo "has been completed"
+
+  for member in "${team_members[@]}"; do
+    member_role=$(get_team_member_role "${member}")
+    if [[ $? -eq 0 ]]; then
+      echo -n "${YUP} Obtaining the team role of '${member}' in the "
+      echo "'${GH_TEAM_NAME}' team has been completed"
+    else
+      echo "${member_role}" >&2
+      exit 1
+    fi
+
+    echo "member: ${member}, role: ${member_role}"
+    # Remove user from the organization if they are a 'member' of the team
+    if [[ "${member_role}" == 'member' ]]; then
+      gh api \
+         --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+         --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+         --method DELETE \
+         /orgs/"${GH_ORG_NAME}"/members/"${member}" \
+         --silent
+
+      if [[ $? -eq 0 ]]; then
+        echo -n "'${member}' successfully removed from the '${GH_ORG_NAME}' "
+        echo "organization."
+      else
+        echo -n "Failed to remove '${member}' from the '${GH_ORG_NAME}' "
+        echo "organization."
+        exit 1
+      fi
+    else
+      echo "'${member}' is not a 'member' role user in the team, skipping..."
+    fi
+  done
+}
+
+# Deletes a specified team from the GitHub organization.
+# Usage: delete_team
+delete_team() {
+  # API request for a team deletion
+  gh api \
+     --method DELETE \
+     --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+     --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+     /orgs/"${GH_ORG_NAME}"/teams/"${GH_TEAM_NAME}" \
+     --silent
+
+  # Check whether the operation was successful
+    if [[ $? -eq 0 ]]; then
+      echo -n "${OK} The '${GH_TEAM_NAME}' team has been deleted "
+      echo "from the '${GH_ORG_NAME}' organization."
+    else
+      echo -n "${ERR} An error occurred while deleting the '${GH_TEAM_NAME}'" >&2
+      echo " team from the '${GH_ORG_NAME}' organization." >&2
+      exit 1
+    fi
+}
+
+# Deletes the entire GitHub organization.
+# Usage: delete_organization
+delete_organization() {
+  # API request for an organization deletion
+  gh api \
+     --method DELETE \
+     --header "Accept: ${GH_API_ACCEPT_HEADER}" \
+     --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
+     /orgs/"${GH_ORG_NAME}" \
+     --silent
+
+  # Check whether the operation was successful
+  if [[ $? -eq 0 ]]; then
+    echo "${OK} The '${GH_ORG_NAME}' organization has been deleted "
+  else
+    echo -n "${ERR} An error occurred while deleting the " >&2
+    echo "'${GH_ORG_NAME}' organization" >&2
+    exit 1
+  fi
+}
+
+# THE MAIN COMMANDS-------------------------------------------------------------#
+# The 'delete' command deletes the entire GitHub organization. Depends on the
+# 'user_config.sh' and 'system_config.sh' files.  For organization deletion we
+# need the 'admin:org' scope.
+delete() {
+
+  # Asking the user for confirmation for deleting the organization
+  echo -n "${WRN} Are you sure you want to delete the organization "
+  echo "'${GH_ORG_NAME}'? (no/yes) [no]:"
+  read user_confirm
+
+  if [[ "${user_confirm}" == 'yes' ]]; then
+    # Requesting the user to type the organization name for final confirmation
+    echo "${WRN} Please type the name of the organization to confirm deletion: "
+    read typed_org_name
+
+    if [[ "${typed_org_name}" == "${GH_ORG_NAME}" ]]; then
+      echo 'Running delete_organization()'
+      delete_organization
+    else
+      echo -n "${WRN} The typed name '${typed_org_name}' does not match "
+      echo "the organization name '${GH_ORG_NAME}'. Aborting deletion."
+    fi
+  else
+    echo "${WRN} Deletion aborted by the user."
+  fi
+}
+
+# The 'close' command concludes a course by archiving project data and
+# optionally deleting the team associated with the course. Depends on the
+# 'user_config.sh' and 'system_config.sh' files.
+close() {
+
+  # Archive data before closing the project
+  echo 'Running get_project_data_as_json()'
+  get_project_data_as_json
+
+  echo 'Running close_project()'
+  close_project
+
+  # Asking the user for confirmation for deleting the team
+  echo -n "${WRN} Are you sure you want to delete the team '${GH_TEAM_NAME}' "
+  echo "from organization '${GH_ORG_NAME}'? (no/yes) [no]:"
+  read user_confirm
+
+  # Asking the user for confirmation for removing members from an organization
+  if [[ "${user_confirm}" == 'yes' ]]; then
+    echo -n "${WRN} Do you want the team members, excluding the team "
+    echo -n "maintainers, to be removed from the organization '${GH_ORG_NAME}'?"
+    echo " (no/yes) [no]:"
+    read user_confirm
+
+    if [[ "${user_confirm}" == 'yes' ]]; then
+      echo 'Running remove_team_members_from_org()'
+      remove_team_members_from_org
+    fi
+
+    echo 'Running delete_team()'
+    delete_team
+  fi
+}
+
+# The 'status' command list the repositories added to the team
+# 'GH_TEAM_NAME'. Depends on the 'user_config.sh' and 'system_config.sh' files.
+status() {
+
+  echo 'Running get_team_repos_list()'
+  get_team_repos_list
+}
+
+# The 'log' commnad captures and logs the current state of a specified GitHub
+# project 'TARGET_PROJECT_TITLE' into a JSON file for archival or potential
+# analysis purposes. Depends on the 'user_config.sh' file.
+log() {
+
+  echo 'Running get_project_data_as_json()'
+  get_project_data_as_json
+}
+
+# The 'unassign' command removes a specified repository from a team
+# 'GH_TEAM_NAME' within the GitHub organization 'GH_ORG_NAME'. Depends on the
+# 'user_config.sh' and 'system_config.sh' files. Usage: unassign <repository
+# name>
+unassign() {
+
+  # Assigning a first argument – repository name – to a local variable.
+  local repo="$1"
+
+  echo 'Running remove_repo_from_team()'
+  remove_repo_from_team "${repo}"
+}
+
+# The 'assign' command assigns a specified repository to a team 'GH_TEAM_NAME'
+# within the GitHub organization 'GH_ORG_NAME'. Depends on the 'user_config.sh'
+# and 'system_config.sh' files. Usage: assign <repository name>
+assign() {
+
+  # Assigning a first argument – repository name – to a local variable.
+  local repo="$1"
+
+  echo 'Running add_repo_to_team()'
+  assign_repo_to_team "${repo}"
+}
+
+disinvite() {
+  # This API operation needs the "admin:org" scope which is not set by
+  # default. To request it, run: gh auth refresh -h github.com -s
+  # admin:org
+  echo 'Running cancel_invitations_to_organization()'
+  cancel_invitations_to_organization
+}
+
+invite() {
+  # Disable the script's trap on ERR (because we don't want to print info about
+  # error but just warning if the HTTP status code is 422).
+  set +o errtrace
+
+  # This API operation needs the "admin:org" scope which is not set by default. To
+  # request it, run: gh auth refresh -h github.com -s admin:org
+  echo 'Running invite_to_organization_team()'
+  invite_to_organization_team
+}
+
+# Opening a course involves, in addition to making some necessary organizational
+# settings, creating a 'GH_TEAM_NAME' team to which students will be added after
+# they accept the invitations to join the organization sent during the course
+# opening operation. Team settings are adjusted here to ensure the mechanism for
+# the automatic selection of a reviewer functions properly. Individuals excluded
+# from reviewing, such as teachers, are listed in
+# 'GH_TEAM_MEMBERS_EXCLUDED_FROM_REVIEWING'. Subsequently, a GitHub project
+# titled 'TARGET_PROJECT_TITLE' is linked to the 'GH_TEAM_NAME' team. At this
+# stage, task repositories are cloned to a local folder. Finally, repositories
+# containing tasks are configured to protect them against modifications by
+# students. Students are required to fork the repository to their account in
+# order to make their changes. Depends on the 'user_config.sh' and
+# 'system_config.sh' files.
+open() {
+
+  # Aborts the script when the first error is detected.
+  set -o errexit
+
+  if [[ ! -f 'emails.txt' ]]; then
+    echo -n "${WRN} The 'emails.txt' file is missing. Please run "
+    echo "the 'soc init' command to create the missing file."
+    exit 1
+  fi
+
+  # Check if username and email for git have been configured.
+  check_git_configs
+
+  # Target repositories validation
+  # Check if the newly created target repositories on GH_ORG_NAME by `sync
+  # command` exist so that we can clone them.
+  echo 'Running check_if_repos_exist()'
+  check_if_repos_exist "${GH_ORG_NAME}" \
+                       "TARGET_REPOS" \
+                       "${TARGET_REPOS[@]}"
+
+  # Disable the script's abort-on-first-error feature.
+  set +o errexit
+
+  echo 'Running update_org_default_repo_permission()'
+  update_org_default_repo_permission
+  echo 'Running update_org_members_can_fork_private_repo()'
+  update_org_members_can_fork_private_repo
+
+  echo 'Running create_team()'
+  create_team
+
+  # By default, the command below sets the team's project permissions to read.
+  # IDEA: it may be worth implementing function for changing the Organization
+  # settings: Settings –> Member privileges –> Projects base permissions [Read]
+  # "Projects created by members will default to the elected role."
+  # get_team_id – gh api graphql
+  # link_project_to_team – gh api graphql
+  echo 'Running link_project_to_team()'
+  link_project_to_team
+
+  # UpdateTeamReviewAssignmentInput is available under the Team review
+  # assignments preview. During the preview period, the API may change without
+  # notice.
+  # https://docs.github.com/en/graphql/reference/mutations#updateteamreviewassignment
+  # https://docs.github.com/en/graphql/reference/input-objects#updateteamreviewassignmentinput
+
+  # TeamReviewAssignmentAlgorithm is available under the Team review
+  # assignments preview. During the preview period, the API may change without
+  # notice. \"$TeamReviewAssignmentAlgorithm\",
+  # get_team_id – gh api graphql
+  # enable_team_review_assignment – gh api graphql
+  echo 'Running enable_team_review_assignment()'
+  enable_team_review_assignment
+
+  # It is required to run sync to create target repositories on the GH_ORG_NAME
+  # account - all functions below depend on it
+  echo 'Running clone_repositories()'
+  clone_repositories
+
+  # !!!!!!!These functions require local repositories!!!!!!!!!!!!!!!!!!!!!
+
+  # # [GitHub docs]: You can define code owners in public repositories with GitHub
+  # # Free and GitHub Free for organizations, and in public and private
+  # # repositories with GitHub Pro, GitHub Team, GitHub Enterprise Cloud, and
+  # # GitHub Enterprise Server.
+  echo 'Running set_team_as_codeowners()'
+  set_team_as_codeowners
+
+  # Aborts the script when the first error is detected.
+  set -o errexit
+
+  echo 'Running commit_changes_and_push_to_remote_repos()'
+  commit_changes_and_push_to_remote_repos
+  # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  # Disable the script's abort-on-first-error feature.
+  set +o errexit
+
+  # # [GitHub docs]: Protected branches are available in public repositories with
+  # # GitHub Free and GitHub Free for organizations, and in public and private
+  # # repositories with GitHub Pro, GitHub Team, GitHub Enterprise Cloud, and
+  # # GitHub Enterprise Server.
+  # # [GitHub docs]: Branch is read-only. Users cannot push to the branch.
+  echo 'Running lock_branch()'
+  lock_branch
+
+  # [GitHub docs]: When enabled, all conversations on code must be resolved before
+  # a pull request can be merged into a branch that matches this rule
+  echo 'Running require_conversation_resolution_before_merging()'
+  require_conversation_resolution_before_merging
+
+  # GitHub Pages is available in private repositories with GitHub Pro, GitHub
+  # Team, GitHub Enterprise Cloud, and GitHub Enterprise Server.
+  echo 'Running switch_on_gh_pages()'
+  switch_on_gh_pages
+  echo 'Running set_website_link()'
+  set_repos_website
+}
+
+unsync() {
+  # Aborts the script when the first error is detected.
+  set -o errexit
+
+  local unsync_from="$1"
+
+  # Disable the script's abort-on-first-error feature.
+  set +o errexit
+
+  if [[ "${unsync_from}" == 'project' || "${unsync_from}" == '' ]]; then
+    # Asking the user for confirmation for removing the project
+    echo -n "${WRN} Are you sure you want to remove the ${TARGET_PROJECT_TITLE}"
+    echo " project from the organization '${GH_ORG_NAME}'? (no/yes) [no]:"
+    read user_confirm
+
+    if [[ "${user_confirm}" == 'yes' ]]; then
+      echo 'Running delete_project()'
+      delete_project
+    fi
+  fi
+
+  if [[ "${unsync_from}" == 'repos' || "${unsync_from}" == '' ]]; then
+    # Aborts the script when the first error is detected.
+    set -o errexit
+    # Target repositories validation
+    # Check if the target repositories exist so that we can delete them.
+    echo 'Running check_if_repos_exist()'
+    check_if_repos_exist "${GH_ORG_NAME}" \
+                         "TARGET_REPOS" \
+                         "${TARGET_REPOS[@]}"
+
+    # Disable the script's abort-on-first-error feature.
+    set +o errexit
+
+    # Asking the user for confirmation for removing all repos
+    echo -n "${WRN} Are you sure you want to remove all "
+    echo "repositories listed in 'TARGET_REPOS' array: "
+    printf "%s\n" "${TARGET_REPOS[@]}"
+    echo "from the organization '${GH_ORG_NAME}'? (no/yes) [no]:"
+    read user_confirm
+
+    if [[ "${user_confirm}" == 'yes' ]]; then
+      echo 'Running delete_repositories()'
+      delete_repositories
+    fi
+  fi
+}
+
+# This command creates a GitHub project titled 'TARGET_PROJECT_TITLE' from the
+# template number 'SOURCE_PROJECT_NUMBER' and 'SOURCE_PROJECT_OWNER' GitHub
+# account, as specified in source_config. This project is utilized to gather
+# information on work progress. Subsequently, repositories with names defined in
+# 'TARGET_REPOS' array in the user_config.sh file are created based on templates
+# repostories defined in 'SOURCE_REPOS' array in the source_config.sh
+# file. Depends on the 'user_config.sh', 'source_config.sh' and
+# 'system_config.sh' files.
+sync() {
+
+  # Aborts the script when the first error is detected.
+  set -o errexit
+
+  local sync_with="$1"
+
+  # Disable the script's abort-on-first-error feature.
+  set +o errexit
+
+  if [[ "${sync_with}" == 'project' || "${sync_with}" == '' ]]; then
+    # In an organization with the Team plan, we have more opportunities to create
+    # charts in Insights than with a user account on the 'Pro' plan. For example,
+    # we can create a graph where x represents time.
+    echo 'Running create_project_from_template()'
+    create_project_from_template
+  fi
+
+  if [[ "${sync_with}" == 'repos' || "${sync_with}" == '' ]]; then
+    # Aborts the script when the first error is detected.
+    set -o errexit
+
+    # Source repositories validation
+    # Check if the source repositories exist so that we can use them. We can't
+    # start repos creating if one of these doesn't exist.
+    echo 'Running check_if_repos_exist()'
+    check_if_repos_exist "${SOURCE_REPOS_OWNER}" \
+                         "SOURCE_REPOS" \
+                         "${SOURCE_REPOS[@]}"
+
+    # Checks if source repositories are templates, so that we can create
+    # repositories based on them. Attempt to make them templates if they are not
+    # already.
+    ensure_repos_as_templates "${SOURCE_REPOS_OWNER}" \
+                              "SOURCE_REPOS" \
+                              "${SOURCE_REPOS[@]}"
+
+    # Target repositories validation
+    # Check if the target repositories not yet exist so that we can create them
+    echo 'Running check_if_repos_noexist()'
+    check_if_repos_noexist "${GH_ORG_NAME}" \
+                           "TARGET_REPOS" \
+                           "${TARGET_REPOS[@]}"
+
+
+    # Disable the script's abort-on-first-error feature.
+    set +o errexit
+
+    # Create repositories defined in the 'TARGET_REPOS' array in the
+    # 'user_config.sh' from the 'SOURCE_REPOS' repository templates array in the
+    # 'source_config.sh' file.
+    echo 'Running create_private_repos_from_templates()'
+    create_private_repos_from_templates
+    echo 'Running set_repos_descriptions()'
+    set_repos_descriptions
+    echo 'Running update_repo_without_cloning()'
+    update_repo_without_cloning
+  fi
+}
+
+# Performs global variable validations from configuration files. Depends on
+# the 'user_config.sh' and 'source_config.sh' files.
+precheck() {
+  # Variable that tracks when an error occurred
+  local error_occurred=0
+  # The first argument of precheck is the verbosity level 0 or 1; 0 is default
+  local VERBOSE=${1:-0}
+
+  if [[ "${VERBOSE}" -eq 1 ]]; then
+    echo "Commands validation:"
+  fi
+  if ! check_if_gh_installed; then error_occurred=1; fi
+  if ! check_if_git_installed; then error_occurred=1; fi
+  if ! check_if_sed_installed; then error_occurred=1; fi
+  if ! check_if_grep_installed; then error_occurred=1; fi
+  if ! check_if_jq_installed; then error_occurred=1; fi
+  if ! check_if_date_installed; then error_occurred=1; fi
+  if ! check_if_touch_installed; then error_occurred=1; fi
+
+  if [[ "${VERBOSE}" -eq 1 ]]; then
+    echo "Validation of global variables from the 'user_config.sh' file:"
+  fi
+  # Variables validations
+  if ! validate_owner_name "GH_ORG_NAME" "${GH_ORG_NAME}"; then
+    error_occurred=1;
+  fi
+
+  if ! validate_team_name "GH_TEAM_NAME" "${GH_TEAM_NAME}"; then
+    error_occurred=1;
+  fi
+  if ! validate_user_names "GH_TEAM_MEMBERS_EXCLUDED_FROM_REVIEWING" \
+       "${GH_TEAM_MEMBERS_EXCLUDED_FROM_REVIEWING[@]}"; then
+    error_occurred=1;
+  fi
+
+  if ! validate_non_empty_string "TARGET_PROJECT_TITLE" "${TARGET_PROJECT_TITLE}"; then
+    error_occurred=1;
+  fi
+
+  # Arrays validations
+  if ! validate_non_empty_array "TARGET_REPOS" "${TARGET_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_repo_names "TARGET_REPOS" "${TARGET_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_no_duplicates "TARGET_REPOS" "${TARGET_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+
+  if [[ "${VERBOSE}" -eq 1 ]]; then
+    echo "Validation of global variables from the 'source_config.sh' file:"
+  fi
+  # Variable validations
+  if ! validate_owner_name "SOURCE_REPOS_OWNER" "${SOURCE_REPOS_OWNER}"; then
+    error_occurred=1;
+  fi
+  if ! validate_owner_name "SOURCE_PROJECT_OWNER" "${SOURCE_PROJECT_OWNER}"; then
+    error_occurred=1;
+  fi
+  if ! validate_numeric "SOURCE_PROJECT_NUMBER" "${SOURCE_PROJECT_NUMBER}"; then
+    error_occurred=1;
+  fi
+
+  # Arrays validations
+  if ! validate_non_empty_array "SOURCE_REPOS" "${SOURCE_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_repo_names "SOURCE_REPOS" "${SOURCE_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_no_duplicates "SOURCE_REPOS" "${SOURCE_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_non_empty_array "SOURCE_MAIN_REPO_INFO_FILES" "${SOURCE_MAIN_REPO_INFO_FILES[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_no_empty_array_elements "SOURCE_MAIN_REPO_INFO_FILES" "${SOURCE_MAIN_REPO_INFO_FILES[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_no_duplicates "SOURCE_MAIN_REPO_INFO_FILES" "${SOURCE_MAIN_REPO_INFO_FILES[@]}"; then
+    error_occurred=1;
+  fi
+
+  # Check if any error occurred
+  if [[ "${error_occurred}" -eq 1 ]]; then
+    echo "{$ERR} Errors occurred during precheck. " >&2
+    exit 1
+  fi
+}
+
+# The init command creates configuration files user_config.sh, source_config.sh,
+# system_config.sh, and an additional file for student emails named
+# emails.txt. It also creates a folder named 'logs' to store JSON data files.
+init() {
+# Aborts the script when the first error is detected.
+set -o errexit
+
+# Create directory if it doesn't already exist
+mkdir -p logs
+
+# Define the path for configuration files
+local user_config_path="./user_config.sh"
+local source_config_path="./source_config.sh"
+local system_config_path="./system_config.sh"
+
+# Define the path for emails file
+local emails_path="./emails.txt"
+
+# Check if the emails.txt file already exists, if not, create it with
+# example values
+if [[ ! -f "${emails_path}" ]]; then
+cat << 'EOF' > "${emails_path}"
+first@example.com
+second@example.com
+third@example.com
+EOF
+echo "${YUP}  The file ${emails_path} has been created."
+else
+  echo "${WRN} The file ${emails_path} already exists."
+fi
+
+# Check if the user_config.sh file already exists, if not, create it with
+# default values
+if [[ ! -f "${user_config_path}" ]]; then
+cat << 'EOF' > "${user_config_path}"
+# ORGANIZATION CONFIGS----------------------------------------------------------#
+# The organization name may only contain alphanumeric characters or single
+# hyphens, and cannot begin or end with a hyphen ('-').
+readonly GH_ORG_NAME='' # insert here your GitHub organization name
+
+# TEAM CONFIGS------------------------------------------------------------------#
+# The team name name may contain only alphanumeric characters, a hyphen-minus
+# character ('-'), and an underscore ('_').
+readonly GH_TEAM_NAME='SoC-DS'
+
+# The team description may contain any character.
+readonly GH_TEAM_DESCRIPTION='SoC Data Science Course'
+
+# The github logins may only contain alphanumeric characters or single
+# hyphens, and cannot begin or end with a hyphen ('-').
+readonly GH_TEAM_MEMBERS_EXCLUDED_FROM_REVIEWING=()
+
+# REPOSITORY CONFIGS------------------------------------------------------------#
+# The repository description may contain any character.
+readonly TARGET_REPO_DESCRIPTION='SoC Data Science Course'
+
+# New repository names: rename according to your preferences, but choose names
+# that are not part of others. The first repository name may be an exception, as
+# in our example: the repository name 'soc-datascience' is part of others. Names
+# may contain only alphanumeric characters, a hyphen-minus
+# character ('-'), an underscore ('_') and a dot ('.').
+readonly TARGET_REPOS=(
+  'soc-datascience'
+  'soc-datascience-hello'
+  'soc-datascience-viz'
+  'soc-datascience-wrang'
+  'soc-datascience-spatial'
+  'soc-datascience-reshape'
+  'soc-datascience-paradox'
+  'soc-datascience-collabor'
+  'soc-datascience-scrap'
+  'soc-datascience-bias'
+  'soc-datascience-fitting'
+  'soc-datascience-nfitting'
+  'soc-datascience-valid'
+  'soc-datascience-hypo'
+  'soc-datascience-wrapup'
+  'soc-datascience-project'
+)
+
+# PROJECT CONFIGS---------------------------------------------------------------#
+# The project title may contain any character.
+readonly TARGET_PROJECT_TITLE='monitor-SoC-DS'
+EOF
+echo "${YUP} The file ${user_config_path} has been created."
+else
+  echo "⚡ The file ${user_config_path} already exists."
+fi
+
+# Check if the source_config.sh file already exists, if not, create it with
+# default values
+if [[ ! -f "${source_config_path}" ]]; then
+cat << 'EOF' > "${source_config_path}"
+# REPOSITORY CONFIGS------------------------------------------------------------#
+readonly SOURCE_REPOS_OWNER='the-soc-org'
+readonly SOURCE_REPOS=(
+  'soc-datascience'
+  'soc-datascience-hello'
+  'soc-datascience-viz'
+  'soc-datascience-wrang'
+  'soc-datascience-spatial'
+  'soc-datascience-reshape'
+  'soc-datascience-paradox'
+  'soc-datascience-collabor'
+  'soc-datascience-scrap'
+  'soc-datascience-bias'
+  'soc-datascience-fitting'
+  'soc-datascience-nfitting'
+  'soc-datascience-valid'
+  'soc-datascience-hypo'
+  'soc-datascience-wrapup'
+  'soc-datascience-project'
+)
+
+# The main repo is the first repository listed in the SOURCE_REPOS array. At
+# least one info file must exist in the main repository. If there is no info
+# file, an error message will be displayed.
+readonly SOURCE_MAIN_REPO_INFO_FILES=(
+  'README.md'
+  'index.md'
+)
+
+# PROJECT CONFIGS---------------------------------------------------------------#
+readonly SOURCE_PROJECT_OWNER='the-soc-org'
+readonly SOURCE_PROJECT_NUMBER='1'
+EOF
+echo "${YUP} The file ${source_config_path} has been created."
+else
+  echo "${WRN} The file ${source_config_path} already exists."
+fi
+
+# Check if the system_config.sh file already exists, if not, create it with
+# default values
+if [[ ! -f "${system_config_path}" ]]; then
+cat << 'EOF' > "${system_config_path}"
+# [GitHub API docs]: https://docs.github.com/en/rest?apiVersion=2022-11-28
+# [GitHub GraphQL docs]: https://docs.github.com/en/graphql/reference
+
+# SOC CLI CONFIGS---------------------------------------------------------------#
+# The platform CLI used by soc commands. The 'soc' dispatcher reads this value
+# to select the correct set of platform-specific command scripts (e.g.,
+# 'soc-gh-open' for GitHub CLI). Supported values: 'gh' (GitHub CLI).
+readonly SOC_PLATFORM_CLI='gh'
+
+# API HEADERS CONFIGS-----------------------------------------------------------#
+readonly GH_API_ACCEPT_HEADER='application/vnd.github+json'
+readonly GH_API_VERSION_HEADER='2022-11-28'
+
+# GITHUB CLI CONFIGS------------------------------------------------------------#
+readonly GH_CLI_TOKEN_SCOPES=('admin:org' 'delete_repo' 'project' 'repo')
+
+# ORGANIZATION CONFIGS----------------------------------------------------------#
+# [GitHub API docs] The role for the new member.
+
+# admin – Organization owners with full administrative rights to the
+# organization and complete access to all repositories and teams.
+
+# direct_member – Non-owner organization members with ability to see other
+# members and join teams by invitation.
+
+# billing_manager – Non-owner organization members with ability to manage the
+# billing settings of your organization.
+
+# reinstate – The previous role assigned to the invitee before they were removed
+# from your organization. Can be one of the roles listed above. Only works if
+# the invitee was previously part of your organization.
+
+readonly GH_ORG_ROLE='direct_member'
+
+# [GitHub API docs] Default permission level members have for organization
+# repositories. Can be one of: read, write, admin, none. GitHub default: read
+readonly GH_ORG_DEFAULT_REPOSITORY_PERMISSION='none'
+
+# [GitHub API docs] Whether organization members can fork private organization
+# repositories. GitHub Default: false; the value other than 'false' will be
+# treated as 'true'
+readonly GH_ORG_MEMBERS_CAN_FORK_PRIVATE_REPOSITORIES=true
+
+# TEAM CONFIGS------------------------------------------------------------------#
+# [GitHub API docs] Team privacy settings.
+# secret – only visible to organization owners and members of this team.
+# closed – visible to all members of this organization.
+# GitHub default: secret
+readonly GH_TEAM_PRIVACY='closed'
+
+# [GitHub API docs] The permission to grant the team on this repository. We
+# accept the following permissions to be set: pull, triage, push, maintain, admin
+# and you can also specify a custom repository role name, if the owning
+# organization has defined any. If no permission is specified, the team's
+# permission attribute will be used to determine what permission to grant the team
+# on this repository.
+# GitHub default: push
+readonly GH_TEAM_REPO_PERMISSION='push'
+
+# [GitHub GraphQL API docs] Notifications settings.
+# notifications_enabled – Team members get notified when the team is @mentioned.
+# notifications_disabled – no one receives notifications.
+# GitHub default: notifications_enabled
+readonly GH_TEAM_NOTIFICATIONS='notifications_enabled'
+
+# [GitHub GraphQL API docs] The algorithm to use for review assignment
+# LOAD_BALANCE – Balance review load across the entire team.
+# ROUND_ROBIN – Alternate reviews between each team member.
+readonly GH_TEAM_REVIEW_ASSIGNMENT_ALGORITHM='LOAD_BALANCE'
+
+# [GitHub GraphQL API docs] Notify the entire team of the PR if it is delegated
+readonly GH_TEAM_NOTIFY=false
+
+# [GitHub GraphQL API docs] The number of team members randomly selected to
+# review the PR
+readonly GH_TEAM_MEMBER_COUNT=1
+
+# REPOSITORY CONFIGS------------------------------------------------------------#
+# [GitHub API docs] The name of the branch. Cannot contain wildcard characters.
+readonly GH_REPO_BRANCH='main'
+
+# PROJECT CONFIGS---------------------------------------------------------------#
+# Maximum number of items to fetch from project; log commnad uses it
+readonly GH_PROJECT_MAX_ITEM=1000
+EOF
+echo "${YUP} The file ${system_config_path} has been created."
+else
+  echo "${WRN} The file ${system_config_path} already exists."
+fi
+
+echo "${YUP} Initialization complete."
+}

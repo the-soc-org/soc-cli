@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# soc-gh-disinvite: Cancels pending organization invitations via GitHub CLI (gh).
+# Usage: soc disinvite
+
+# shellcheck source=soc-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib.sh"
+# shellcheck source=soc-lib-gh.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib-gh.sh"
+
+source_config_files
+precheck 0
+check_if_gh_has_required_token_scopes
+
+disinvite

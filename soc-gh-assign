@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# soc-gh-assign: Assigns a repository to the team via GitHub CLI (gh).
+# Usage: soc assign <repository name>
+
+# shellcheck source=soc-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib.sh"
+# shellcheck source=soc-lib-gh.sh
+. "$(dirname "${BASH_SOURCE[0]}")/soc-lib-gh.sh"
+
+if [[ "$#" -ne 1 || -z "${1:-}" ]]; then
+  echo "${ERR} Invalid number of arguments or empty argument." >&2
+  echo "${WRN} Usage: soc assign <repository name>"
+  exit 1
+fi
+
+source_config_files
+precheck 0
+check_if_gh_has_required_token_scopes
+
+assign "$1"

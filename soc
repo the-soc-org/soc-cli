@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# soc – Platform-aware dispatcher for SoC CLI commands.
+#
+# Reads SOC_PLATFORM_CLI from system_config.sh (default: 'gh') and delegates
+# to the matching platform-specific script:
+#
+#   soc open  →  (SOC_PLATFORM_CLI=gh)  →  exec soc-gh-open
+#   soc open  →  (SOC_PLATFORM_CLI=tea) →  exec soc-tea-open
+#
+# For commands that have no platform-specific variant the dispatcher falls back
+# to a plain  soc-<cmd>  script in the same directory.
+
+set +o errexit
+set -o nounset
+
+CMD="${1:-}"
+shift || true
+
+if [[ -z "${CMD}" ]]; then
+  echo "usage: soc <command> [args...]" >&2
+  exit 1
+fi
+
+# Determine the platform CLI.  We parse system_config.sh with grep/sed instead
+# of sourcing it to avoid readonly-variable conflicts when the config is later
+# sourced inside the individual command scripts.
+# The generated system_config.sh always uses single quotes (e.g.
+# readonly SOC_PLATFORM_CLI='gh'), but the parser also handles double-quoted
+# and bare (unquoted) values for robustness.
+SOC_PLATFORM_CLI='gh'
+if [[ -f 'system_config.sh' ]]; then
+  _val=$(grep "^readonly SOC_PLATFORM_CLI=" system_config.sh \
+         | sed "s/^readonly SOC_PLATFORM_CLI=//; s/^['\"]//; s/['\"]$//" \
+           2>/dev/null \
+         || true)
+  if [[ -n "${_val:-}" ]]; then
+    SOC_PLATFORM_CLI="${_val}"
+  fi
+  unset _val
+fi
+
+PLATFORM="${SOC_PLATFORM_CLI}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Try platform-specific command first (e.g. soc-gh-open), then fall back to a
+# platform-agnostic command (e.g. soc-open) if one exists.
+if [[ -x "${SCRIPT_DIR}/soc-${PLATFORM}-${CMD}" ]]; then
+  exec "${SCRIPT_DIR}/soc-${PLATFORM}-${CMD}" "$@"
+elif [[ -x "${SCRIPT_DIR}/soc-${CMD}" ]]; then
+  exec "${SCRIPT_DIR}/soc-${CMD}" "$@"
+else
+  echo "soc: unknown command '${CMD}' for platform '${PLATFORM}'" >&2
+  exit 1
+fi
