@@ -1,0 +1,19 @@
+name: Lint Bash Scripts
+
+on: [push, pull_request]
+
+jobs:
+  lint:
+    name: Run ShellCheck and shfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python (required for pre-commit)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Run pre-commit hooks
+        uses: pre-commit/action@v3.0.1
