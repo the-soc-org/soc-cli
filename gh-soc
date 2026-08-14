@@ -9,14 +9,14 @@ set +o errexit
 set -o nounset
 set -o errtrace
 
+# Establish a trap for any error that occurs, calling the `error_handler`
+# function with the source file and line number as arguments.
+trap 'error_handler ${BASH_SOURCE} ${LINENO}' ERR
+
 # Resolve the directory of this script and load the shared library from it.
 # This keeps the script working regardless of the current working directory.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/soc-lib.sh"
-
-# Establish a trap for any error that occurs, calling the `error_handler`
-# function with the source file and line number as arguments.
-trap 'error_handler ${BASH_SOURCE} ${LINENO}' ERR
 
 # Handles errors by printing the source file and line number where the error
 # occurred. Usage: error_handler <source_file> <line_number>
@@ -2066,7 +2066,184 @@ validate_no_duplicates() {
 
   "${is_set_nounset}" || set +u
 }
- default to the elected role."
+
+# TODO:
+# Add function validations on global variables from system_config.sh
+# END:
+
+# THE MAIN COMMANDS-------------------------------------------------------------#
+# The 'delete' command deletes the entire GitHub organization. Depends on the
+# 'user_config.sh' and 'system_config.sh' files.  For organization deletion we
+# need the 'admin:org' scope.
+delete() {
+
+  # Asking the user for confirmation for deleting the organization
+  echo -n "${WRN} Are you sure you want to delete the organization "
+  echo "'${GH_ORG_NAME}'? (no/yes) [no]:"
+  read user_confirm
+
+  if [[ "${user_confirm}" == 'yes' ]]; then
+    # Requesting the user to type the organization name for final confirmation
+    echo "${WRN} Please type the name of the organization to confirm deletion: "
+    read typed_org_name
+
+    if [[ "${typed_org_name}" == "${GH_ORG_NAME}" ]]; then
+      echo 'Running delete_organization()'
+      delete_organization
+    else
+      echo -n "${WRN} The typed name '${typed_org_name}' does not match "
+      echo "the organization name '${GH_ORG_NAME}'. Aborting deletion."
+    fi
+  else
+    echo "${WRN} Deletion aborted by the user."
+  fi
+}
+
+# The 'close' command concludes a course by archiving project data and
+# optionally deleting the team associated with the course. Depends on the
+# 'user_config.sh' and 'system_config.sh' files.
+close() {
+
+  # Archive data before closing the project
+  echo 'Running get_project_data_as_json()'
+  get_project_data_as_json
+
+  echo 'Running close_project()'
+  close_project
+
+  # Asking the user for confirmation for deleting the team
+  echo -n "${WRN} Are you sure you want to delete the team '${GH_TEAM_NAME}' "
+  echo "from organization '${GH_ORG_NAME}'? (no/yes) [no]:"
+  read user_confirm
+
+  # Asking the user for confirmation for removing members from an organization
+  if [[ "${user_confirm}" == 'yes' ]]; then
+    echo -n "${WRN} Do you want the team members, excluding the team "
+    echo -n "maintainers, to be removed from the organization '${GH_ORG_NAME}'?"
+    echo " (no/yes) [no]:"
+    read user_confirm
+
+    if [[ "${user_confirm}" == 'yes' ]]; then
+      echo 'Running remove_team_members_from_org()'
+      remove_team_members_from_org
+    fi
+
+    echo 'Running delete_team()'
+    delete_team
+  fi
+}
+
+# The 'status' command list the repositories added to the team
+# 'GH_TEAM_NAME'. Depends on the 'user_config.sh' and 'system_config.sh' files.
+status() {
+
+  echo 'Running get_team_repos_list()'
+  get_team_repos_list
+}
+
+# The 'log' commnad captures and logs the current state of a specified GitHub
+# project 'TARGET_PROJECT_TITLE' into a JSON file for archival or potential
+# analysis purposes. Depends on the 'user_config.sh' file.
+log() {
+
+  echo 'Running get_project_data_as_json()'
+  get_project_data_as_json
+}
+
+# The 'unassign' command removes a specified repository from a team
+# 'GH_TEAM_NAME' within the GitHub organization 'GH_ORG_NAME'. Depends on the
+# 'user_config.sh' and 'system_config.sh' files. Usage: unassign <repository
+# name>
+unassign() {
+
+  # Assigning a first argument – repository name – to a local variable.
+  local repo="$1"
+
+  echo 'Running remove_repo_from_team()'
+  remove_repo_from_team "${repo}"
+}
+
+# The 'assign' command assigns a specified repository to a team 'GH_TEAM_NAME'
+# within the GitHub organization 'GH_ORG_NAME'. Depends on the 'user_config.sh'
+# and 'system_config.sh' files. Usage: assign <repository name>
+assign() {
+
+  # Assigning a first argument – repository name – to a local variable.
+  local repo="$1"
+
+  echo 'Running add_repo_to_team()'
+  assign_repo_to_team "${repo}"
+}
+
+disinvite() {
+  # This API operation needs the "admin:org" scope which is not set by
+  # default. To request it, run: gh auth refresh -h github.com -s
+  # admin:org
+  echo 'Running cancel_invitations_to_organization()'
+  cancel_invitations_to_organization
+}
+
+invite() {
+  # Disable the script's trap on ERR (because we don't want to print info about
+  # error but just warning if the HTTP status code is 422).
+  set +o errtrace
+
+  # This API operation needs the "admin:org" scope which is not set by default. To
+  # request it, run: gh auth refresh -h github.com -s admin:org
+  echo 'Running invite_to_organization_team()'
+  invite_to_organization_team
+}
+
+# Opening a course involves, in addition to making some necessary organizational
+# settings, creating a 'GH_TEAM_NAME' team to which students will be added after
+# they accept the invitations to join the organization sent during the course
+# opening operation. Team settings are adjusted here to ensure the mechanism for
+# the automatic selection of a reviewer functions properly. Individuals excluded
+# from reviewing, such as teachers, are listed in
+# 'GH_TEAM_MEMBERS_EXCLUDED_FROM_REVIEWING'. Subsequently, a GitHub project
+# titled 'TARGET_PROJECT_TITLE' is linked to the 'GH_TEAM_NAME' team. At this
+# stage, task repositories are cloned to a local folder. Finally, repositories
+# containing tasks are configured to protect them against modifications by
+# students. Students are required to fork the repository to their account in
+# order to make their changes. Depends on the 'user_config.sh' and
+# 'system_config.sh' files.
+open() {
+
+  # Aborts the script when the first error is detected.
+  set -o errexit
+
+  if [[ ! -f 'emails.txt' ]]; then
+    echo -n "${WRN} The 'emails.txt' file is missing. Please run "
+    echo "the 'gh soc init' command to create the missing file."
+    exit 1
+  fi
+
+  # Check if username and email for git have been configured.
+  check_git_configs
+
+  # Target repositories validation
+  # Check if the newly created target repositories on GH_ORG_NAME by `sync
+  # command` exist so that we can clone them.
+  echo 'Running check_if_repos_exist()'
+  check_if_repos_exist "${GH_ORG_NAME}" \
+                       "TARGET_REPOS" \
+                       "${TARGET_REPOS[@]}"
+
+  # Disable the script's abort-on-first-error feature.
+  set +o errexit
+
+  echo 'Running update_org_default_repo_permission()'
+  update_org_default_repo_permission
+  echo 'Running update_org_members_can_fork_private_repo()'
+  update_org_members_can_fork_private_repo
+
+  echo 'Running create_team()'
+  create_team
+
+  # By default, the command below sets the team's project permissions to read.
+  # IDEA: it may be worth implementing function for changing the Organization
+  # settings: Settings –> Member privileges –> Projects base permissions [Read]
+  # "Projects created by members will default to the elected role."
   # get_team_id – gh api graphql
   # link_project_to_team – gh api graphql
   echo 'Running link_project_to_team()'
