@@ -18,26 +18,6 @@ trap 'error_handler ${BASH_SOURCE} ${LINENO}' ERR
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/soc-lib.sh"
 
-# Handles errors by printing the source file and line number where the error
-# occurred. Usage: error_handler <source_file> <line_number>
-error_handler() {
-  local src="$1"
-  local line="$2"
-
-  echo "${ERR} Error: in ${src} at line ${line}" >&2
-}
-
-# Removes a temporary file, if it exists, and prints a confirmation message.
-# Usage: remove_tmp_file <file_path>
-remove_tmp_file() {
-  local file_to_remove="$1"
-
-  if [[ -f "$file_to_remove" ]]; then
-    rm -f "${file_to_remove}"
-    echo "${YUP} Temporary file '${file_to_remove}' has been deleted"
-  fi
-}
-
 # Checks if the GitHub CLI is authenticated with the required token scopes.
 # Aborts the script with an error message if required scopes are missing.
 # Usage: check_if_gh_has_required_token_scopes
