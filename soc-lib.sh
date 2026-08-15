@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Shared library of common helper functions for the project.
+# This file is intended to be sourced by shell scripts that need access to the
+# shared functionality defined here.
+
 # Define visual indicators for the terminal output to enhance readability.
 # - `OK`: White Heavy Check Mark (Unicode: U+2705), indicates success.
 # - `YUP`: Check Mark (Unicode: U+2713), also indicates confirmation or success.
