@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -e
+
+CMD="$1"
+shift || true
+
+if [[ -z "$CMD" ]]; then
+  echo "usage: soc <command>" >&2
+  exit 1
+fi
+
+if ! command -v "soc-$CMD" >/dev/null; then
+  echo "soc: unknown command '$CMD'" >&2
+  exit 1
+fi
+
+exec "soc-$CMD" "$@"
