@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 set -e
 
-CMD="$1"
-shift || true
-
-if [[ -z "$CMD" ]]; then
-  echo "usage: soc <command>" >&2
+if [[ "$#" -eq 0 ]]; then
+  echo -n "${WRN} Usage: soc [init|precheck|sync|unsync|open|close|"
+  echo "invite|disinvite|assign|unassign|log|status|delete]"
   exit 1
 fi
 
+CMD="$1"
+shift || true
+
 if ! command -v "soc-$CMD" >/dev/null; then
-  echo "soc: unknown command '$CMD'" >&2
+  echo -n "${ERR} Invalid argument. Available options: init, precheck, " >&2
+  echo -n "sync, unsync, open, close, invite, disinvite, assign, " >&2
+  echo "unassign, log, status, delete" >&2
   exit 1
 fi
 

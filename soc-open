@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+
+# Opening a course involves, in addition to making some necessary organizational
+# settings, creating a 'GH_TEAM_NAME' team to which students will be added after
+# they accept the invitations to join the organization sent during the course
+# opening operation. Team settings are adjusted here to ensure the mechanism for
+# the automatic selection of a reviewer functions properly. Individuals excluded
+# from reviewing, such as teachers, are listed in
+# 'GH_TEAM_MEMBERS_EXCLUDED_FROM_REVIEWING'. Subsequently, a GitHub project
+# titled 'TARGET_PROJECT_TITLE' is linked to the 'GH_TEAM_NAME' team. At this
+# stage, task repositories are cloned to a local folder. Finally, repositories
+# containing tasks are configured to protect them against modifications by
+# students. Students are required to fork the repository to their account in
+# order to make their changes. Depends on the 'user_config.sh' and
+# 'system_config.sh' files.
+
+set -e
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/gh-soc"
+
+# If exist, source the configuration files
+if [[ -f 'user_config.sh' && -f 'source_config.sh' && -f 'system_config.sh' ]]; then
+  source user_config.sh
+  source source_config.sh
+  source system_config.sh
+else
+  echo "${WRN} The 'user_config.sh', 'source_config.sh' and/or 'system_config.sh' "
+  echo "file is missing. Please run the 'gh soc init' command to create the "
+  echo "missing file(s)."
+  exit 1
+fi
+
+# Silently validate global variables before all functions except 'init' and
+# 'precheck'
+precheck 0
+
+# Check if the user has the required token scopes defined in the
+# 'GH_TOKEN_SCOPES' in th 'system_config.sh' file. The command 'unsync'
+# requires the 'delete_repo' scope for repository deletion and the 'project'
+# scope for project deletion. For logging the project, we need the
+# 'read:project' scope, but other commands require more permissions. For
+# example, the 'project' scope is required by 'open' command to link the
+# project to a team, by the 'sync' command to create the project, and the
+# 'close' command to close the project. The 'open' command requires the
+# 'write:org' scope, while the 'invite', 'disinvite', and 'delete' commands
+# require the 'admin:org' scope.
+check_if_gh_has_required_token_scopes
+
+open() {
+
+  # Aborts the script when the first error is detected.
+  set -o errexit
+
+  if [[ ! -f 'emails.txt' ]]; then
+    echo -n "${WRN} The 'emails.txt' file is missing. Please run "
+    echo "the 'gh soc init' command to create the missing file."
+    exit 1
+  fi
+
+  # Check if username and email for git have been configured.
+  check_git_configs
+
+  # Target repositories validation
+  # Check if the newly created target repositories on GH_ORG_NAME by `sync
+  # command` exist so that we can clone them.
+  echo 'Running check_if_repos_exist()'
+  check_if_repos_exist "${GH_ORG_NAME}" \
+                       "TARGET_REPOS" \
+                       "${TARGET_REPOS[@]}"
+
+  # Disable the script's abort-on-first-error feature.
+  set +o errexit
+
+  echo 'Running update_org_default_repo_permission()'
+  update_org_default_repo_permission
+  echo 'Running update_org_members_can_fork_private_repo()'
+  update_org_members_can_fork_private_repo
+
+  echo 'Running create_team()'
+  create_team
+
+  # By default, the command below sets the team's project permissions to read.
+  # IDEA: it may be worth implementing function for changing the Organization
+  # settings: Settings –> Member privileges –> Projects base permissions [Read]
+  # "Projects created by members will default to the elected role."
+  # get_team_id – gh api graphql
+  # link_project_to_team – gh api graphql
+  echo 'Running link_project_to_team()'
+  link_project_to_team
+
+  # UpdateTeamReviewAssignmentInput is available under the Team review
+  # assignments preview. During the preview period, the API may change without
+  # notice.
+  # https://docs.github.com/en/graphql/reference/mutations#updateteamreviewassignment
+  # https://docs.github.com/en/graphql/reference/input-objects#updateteamreviewassignmentinput
+
+  # TeamReviewAssignmentAlgorithm is available under the Team review
+  # assignments preview. During the preview period, the API may change without
+  # notice. \"$TeamReviewAssignmentAlgorithm\",
+  # get_team_id – gh api graphql
+  # enable_team_review_assignment – gh api graphql
+  echo 'Running enable_team_review_assignment()'
+  enable_team_review_assignment
+
+  # It is required to run sync to create target repositories on the GH_ORG_NAME
+  # account - all functions below depend on it
+  echo 'Running clone_repositories()'
+  clone_repositories
+
+  # !!!!!!!These functions require local repositories!!!!!!!!!!!!!!!!!!!!!
+
+  # # [GitHub docs]: You can define code owners in public repositories with GitHub
+  # # Free and GitHub Free for organizations, and in public and private
+  # # repositories with GitHub Pro, GitHub Team, GitHub Enterprise Cloud, and
+  # # GitHub Enterprise Server.
+  echo 'Running set_team_as_codeowners()'
+  set_team_as_codeowners
+
+  # Aborts the script when the first error is detected.
+  set -o errexit
+
+  echo 'Running commit_changes_and_push_to_remote_repos()'
+  commit_changes_and_push_to_remote_repos
+  # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  # Disable the script's abort-on-first-error feature.
+  set +o errexit
+
+  # # [GitHub docs]: Protected branches are available in public repositories with
+  # # GitHub Free and GitHub Free for organizations, and in public and private
+  # # repositories with GitHub Pro, GitHub Team, GitHub Enterprise Cloud, and
+  # # GitHub Enterprise Server.
+  # # [GitHub docs]: Branch is read-only. Users cannot push to the branch.
+  echo 'Running lock_branch()'
+  lock_branch
+
+  # [GitHub docs]: When enabled, all conversations on code must be resolved before
+  # a pull request can be merged into a branch that matches this rule
+  echo 'Running require_conversation_resolution_before_merging()'
+  require_conversation_resolution_before_merging
+
+  # GitHub Pages is available in private repositories with GitHub Pro, GitHub
+  # Team, GitHub Enterprise Cloud, and GitHub Enterprise Server.
+  echo 'Running swich_on_gh_pages()'
+  swich_on_gh_pages
+  echo 'Running set_website_link()'
+  set_repos_website
+}
+
+main "open" "$@"

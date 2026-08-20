@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+# This command creates a GitHub project titled 'TARGET_PROJECT_TITLE' from the
+# template number 'SOURCE_PROJECT_NUMBER' and 'SOURCE_PROJECT_OWNER' GitHub
+# account, as specified in source_config. This project is utilized to gather
+# information on work progress. Subsequently, repositories with names defined in
+# 'TARGET_REPOS' array in the user_config.sh file are created based on templates
+# repostories defined in 'SOURCE_REPOS' array in the source_config.sh
+# file. Depends on the 'user_config.sh', 'source_config.sh' and
+# 'system_config.sh' files.
+
+set -e
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/gh-soc"
+
+# If exist, source the configuration files
+if [[ -f 'user_config.sh' && -f 'source_config.sh' && -f 'system_config.sh' ]]; then
+  source user_config.sh
+  source source_config.sh
+  source system_config.sh
+else
+  echo "${WRN} The 'user_config.sh', 'source_config.sh' and/or 'system_config.sh' "
+  echo "file is missing. Please run the 'gh soc init' command to create the "
+  echo "missing file(s)."
+  exit 1
+fi
+
+# Silently validate global variables before all functions except 'init' and
+# 'precheck'
+precheck 0
+
+# Check if the user has the required token scopes defined in the
+# 'GH_TOKEN_SCOPES' in th 'system_config.sh' file. The command 'unsync'
+# requires the 'delete_repo' scope for repository deletion and the 'project'
+# scope for project deletion. For logging the project, we need the
+# 'read:project' scope, but other commands require more permissions. For
+# example, the 'project' scope is required by 'open' command to link the
+# project to a team, by the 'sync' command to create the project, and the
+# 'close' command to close the project. The 'open' command requires the
+# 'write:org' scope, while the 'invite', 'disinvite', and 'delete' commands
+# require the 'admin:org' scope.
+check_if_gh_has_required_token_scopes
+
+sync() {
+
+  # Aborts the script when the first error is detected.
+  set -o errexit
+
+  local sync_with="$1"
+
+  # Disable the script's abort-on-first-error feature.
+  set +o errexit
+
+  if [[ "${sync_with}" == 'project' || "${sync_with}" == '' ]]; then
+    # In an organization with the Team plan, we have more opportunities to create
+    # charts in Insights than with a user account on the 'Pro' plan. For example,
+    # we can create a graph where x represents time.
+    echo 'Running create_project_from_template()'
+    create_project_from_template
+  fi
+
+  if [[ "${sync_with}" == 'repos' || "${sync_with}" == '' ]]; then
+    # Aborts the script when the first error is detected.
+    set -o errexit
+
+    # Source repositories validation
+    # Check if the source repositories exist so that we can use them. We can't
+    # start repos creating if one of these doesn't exist.
+    echo 'Running check_if_repos_exist()'
+    check_if_repos_exist "${SOURCE_REPOS_OWNER}" \
+                         "SOURCE_REPOS" \
+                         "${SOURCE_REPOS[@]}"
+
+    # Checks if source repositories are templates, so that we can create
+    # repositories based on them. Attempt to make them templates if they are not
+    # already.
+    ensure_repos_as_templates "${SOURCE_REPOS_OWNER}" \
+                              "SOURCE_REPOS" \
+                              "${SOURCE_REPOS[@]}"
+
+    # Target repositories validation
+    # Check if the target repositories not yet exist so that we can create them
+    echo 'Running check_if_repos_noexist()'
+    check_if_repos_noexist "${GH_ORG_NAME}" \
+                           "TARGET_REPOS" \
+                           "${TARGET_REPOS[@]}"
+
+
+    # Disable the script's abort-on-first-error feature.
+    set +o errexit
+
+    # Create repositories defined in the 'TARGET_REPOS' array in the
+    # 'user_config.sh' from the 'SOURCE_REPOS' repository templates array in the
+    # 'source_config.sh' file.
+    echo 'Running create_private_repos_from_templates()'
+    create_private_repos_from_templates
+    echo 'Running set_repos_descriptions()'
+    set_repos_descriptions
+    echo 'Running update_repo_without_cloning()'
+    update_repo_without_cloning
+  fi
+}
+
+main "sync" "$@"

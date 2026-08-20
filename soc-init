@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+
+# The init command creates configuration files user_config.sh, source_config.sh,
+# system_config.sh, and an additional file for student emails named
+# emails.txt. It also creates a folder named 'logs' to store JSON data files.
+
+set -e
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/gh-soc"
+init() {
+# Aborts the script when the first error is detected.
+set -o errexit
+
+# Create directory if it doesn't already exist
+mkdir -p logs
+
+# Define the path for configuration files
+local user_config_path="./user_config.sh"
+local source_config_path="./source_config.sh"
+local system_config_path="./system_config.sh"
+
+# Define the path for emails file
+local emails_path="./emails.txt"
+
+# Check if the emails.txt file already exists, if not, create it with
+# example values
+if [[ ! -f "${emails_path}" ]]; then
+cat << 'EOF' > "${emails_path}"
+first@example.com
+second@example.com
+third@example.com
+EOF
+echo "${YUP}  The file ${emails_path} has been created."
+else
+  echo "${WRN} The file ${emails_path} already exists."
+fi
+
+# Check if the user_config.sh file already exists, if not, create it with
+# default values
+if [[ ! -f "${user_config_path}" ]]; then
+cat << 'EOF' > "${user_config_path}"
+# ORGANIZATION CONFIGS----------------------------------------------------------#
+# The organization name may only contain alphanumeric characters or single
+# hyphens, and cannot begin or end with a hyphen ('-').
+readonly GH_ORG_NAME='' # insert here your GitHub organization name
+
+# TEAM CONFIGS------------------------------------------------------------------#
+# The team name name may contain only alphanumeric characters, a hyphen-minus
+# character ('-'), and an underscore ('_').
+readonly GH_TEAM_NAME='SoC-DS'
+
+# The team description may contain any character.
+readonly GH_TEAM_DESCRIPTION='SoC Data Science Course'
+
+# The github logins may only contain alphanumeric characters or single
+# hyphens, and cannot begin or end with a hyphen ('-').
+readonly GH_TEAM_MEMBERS_EXCLUDED_FROM_REVIEWING=()
+
+# REPOSITORY CONFIGS------------------------------------------------------------#
+# The repository description may contain any character.
+readonly TARGET_REPO_DESCRIPTION='SoC Data Science Course'
+
+# New repository names: rename according to your preferences, but choose names
+# that are not part of others. The first repository name may be an exception, as
+# in our example: the repository name 'soc-datascience' is part of others. Names
+# may contain only alphanumeric characters, a hyphen-minus
+# character ('-'), an underscore ('_') and a dot ('.').
+readonly TARGET_REPOS=(
+  'soc-datascience'
+  'soc-datascience-hello'
+  'soc-datascience-viz'
+  'soc-datascience-wrang'
+  'soc-datascience-spatial'
+  'soc-datascience-reshape'
+  'soc-datascience-paradox'
+  'soc-datascience-collabor'
+  'soc-datascience-scrap'
+  'soc-datascience-bias'
+  'soc-datascience-fitting'
+  'soc-datascience-nfitting'
+  'soc-datascience-valid'
+  'soc-datascience-hypo'
+  'soc-datascience-wrapup'
+  'soc-datascience-project'
+)
+
+# PROJECT CONFIGS---------------------------------------------------------------#
+# The project title may contain any character.
+readonly TARGET_PROJECT_TITLE='monitor-SoC-DS'
+EOF
+echo "${YUP} The file ${user_config_path} has been created."
+else
+  echo "⚡ The file ${user_config_path} already exists."
+fi
+
+# Check if the source_config.sh file already exists, if not, create it with
+# default values
+if [[ ! -f "${source_config_path}" ]]; then
+cat << 'EOF' > "${source_config_path}"
+# REPOSITORY CONFIGS------------------------------------------------------------#
+readonly SOURCE_REPOS_OWNER='the-soc-org'
+readonly SOURCE_REPOS=(
+  'soc-datascience'
+  'soc-datascience-hello'
+  'soc-datascience-viz'
+  'soc-datascience-wrang'
+  'soc-datascience-spatial'
+  'soc-datascience-reshape'
+  'soc-datascience-paradox'
+  'soc-datascience-collabor'
+  'soc-datascience-scrap'
+  'soc-datascience-bias'
+  'soc-datascience-fitting'
+  'soc-datascience-nfitting'
+  'soc-datascience-valid'
+  'soc-datascience-hypo'
+  'soc-datascience-wrapup'
+  'soc-datascience-project'
+)
+
+# The main repo is the first repository listed in the SOURCE_REPOS array. At
+# least one info file must exist in the main repository. If there is no info
+# file, an error message will be displayed.
+readonly SOURCE_MAIN_REPO_INFO_FILES=(
+  'README.md'
+  'index.md'
+)
+
+# PROJECT CONFIGS---------------------------------------------------------------#
+readonly SOURCE_PROJECT_OWNER='the-soc-org'
+readonly SOURCE_PROJECT_NUMBER='1'
+EOF
+echo "${YUP} The file ${source_config_path} has been created."
+else
+  echo "${WRN} The file ${source_config_path} already exists."
+fi
+
+# Check if the system_config.sh file already exists, if not, create it with
+# default values
+if [[ ! -f "${system_config_path}" ]]; then
+cat << 'EOF' > "${system_config_path}"
+# [GitHub API docs]: https://docs.github.com/en/rest?apiVersion=2022-11-28
+# [GitHub GraphQL docs]: https://docs.github.com/en/graphql/reference
+
+# API HEADERS CONFIGS-----------------------------------------------------------#
+readonly GH_API_ACCEPT_HEADER='application/vnd.github+json'
+readonly GH_API_VERSION_HEADER='2022-11-28'
+
+# GITHUB CLI CONFIGS------------------------------------------------------------#
+readonly GH_CLI_TOKEN_SCOPES=('admin:org' 'delete_repo' 'project' 'repo')
+
+# ORGANIZATION CONFIGS----------------------------------------------------------#
+# [GitHub API docs] The role for the new member.
+
+# admin – Organization owners with full administrative rights to the
+# organization and complete access to all repositories and teams.
+
+# direct_member – Non-owner organization members with ability to see other
+# members and join teams by invitation.
+
+# billing_manager – Non-owner organization members with ability to manage the
+# billing settings of your organization.
+
+# reinstate – The previous role assigned to the invitee before they were removed
+# from your organization. Can be one of the roles listed above. Only works if
+# the invitee was previously part of your organization.
+
+readonly GH_ORG_ROLE='direct_member'
+
+# [GitHub API docs] Default permission level members have for organization
+# repositories. Can be one of: read, write, admin, none. GitHub default: read
+readonly GH_ORG_DEFAULT_REPOSITORY_PERMISSION='none'
+
+# [GitHub API docs] Whether organization members can fork private organization
+# repositories. GitHub Default: false; the value other than 'false' will be
+# treated as 'true'
+readonly GH_ORG_MEMBERS_CAN_FORK_PRIVATE_REPOSITORIES=true
+
+# TEAM CONFIGS------------------------------------------------------------------#
+# [GitHub API docs] Team privacy settings.
+# secret – only visible to organization owners and members of this team.
+# closed – visible to all members of this organization.
+# GitHub default: secret
+readonly GH_TEAM_PRIVACY='closed'
+
+# [GitHub API docs] The permission to grant the team on this repository. We
+# accept the following permissions to be set: pull, triage, push, maintain, admin
+# and you can also specify a custom repository role name, if the owning
+# organization has defined any. If no permission is specified, the team's
+# permission attribute will be used to determine what permission to grant the team
+# on this repository.
+# GitHub default: push
+readonly GH_TEAM_REPO_PERMISSION='push'
+
+# [GitHub GraphQL API docs] Notifications settings.
+# notifications_enabled – Team members get notified when the team is @mentioned.
+# notifications_disabled – no one receives notifications.
+# GitHub default: notifications_enabled
+readonly GH_TEAM_NOTIFICATIONS='notifications_enabled'
+
+# [GitHub GraphQL API docs] The algorithm to use for review assignment
+# LOAD_BALANCE – Balance review load across the entire team.
+# ROUND_ROBIN – Alternate reviews between each team member.
+readonly GH_TEAM_REVIEW_ASSIGNMENT_ALGORITHM='LOAD_BALANCE'
+
+# [GitHub GraphQL API docs] Notify the entire team of the PR if it is delegated
+readonly GH_TEAM_NOTIFY=false
+
+# [GitHub GraphQL API docs] The number of team members randomly selected to
+# review the PR
+readonly GH_TEAM_MEMBER_COUNT=1
+
+# REPOSITORY CONFIGS------------------------------------------------------------#
+# [GitHub API docs] The name of the branch. Cannot contain wildcard characters.
+readonly GH_REPO_BRANCH='main'
+
+# PROJECT CONFIGS---------------------------------------------------------------#
+# Maximum number of items to fetch from project; log commnad uses it
+readonly GH_PROJECT_MAX_ITEM=1000
+EOF
+echo "${YUP} The file ${system_config_path} has been created."
+else
+  echo "${WRN} The file ${system_config_path} already exists."
+fi
+
+echo "${YUP} Initialization complete."
+}
+
+main "init" "$@"

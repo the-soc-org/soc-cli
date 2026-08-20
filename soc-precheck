@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+# Performs global variable validations from configuration files. Depends on
+# the 'user_config.sh' and 'source_config.sh' files.
+
+set -e
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/gh-soc"
+
+# If exist, source the configuration files
+if [[ -f 'user_config.sh' && -f 'source_config.sh' && -f 'system_config.sh' ]]; then
+  source user_config.sh
+  source source_config.sh
+  source system_config.sh
+else
+  echo "${WRN} The 'user_config.sh', 'source_config.sh' and/or 'system_config.sh' "
+  echo "file is missing. Please run the 'gh soc init' command to create the "
+  echo "missing file(s)."
+  exit 1
+fi
+
+precheck() {
+  # Variable that tracks when an error occurred
+  local error_occurred=0
+  # The first argument of precheck is the verbosity level 0 or 1; 0 is default
+  local VERBOSE=${1:-0}
+
+  if [[ "${VERBOSE}" -eq 1 ]]; then
+    echo "Commands validation:"
+  fi
+  if ! check_if_gh_installed; then error_occurred=1; fi
+  if ! check_if_git_installed; then error_occurred=1; fi
+  if ! check_if_sed_installed; then error_occurred=1; fi
+  if ! check_if_grep_installed; then error_occurred=1; fi
+  if ! check_if_jq_installed; then error_occurred=1; fi
+  if ! check_if_date_installed; then error_occurred=1; fi
+  if ! check_if_touch_installed; then error_occurred=1; fi
+
+  if [[ "${VERBOSE}" -eq 1 ]]; then
+    echo "Validation of global variables from the 'user_config.sh' file:"
+  fi
+  # Variables validations
+  if ! validate_owner_name "GH_ORG_NAME" "${GH_ORG_NAME}"; then
+    error_occurred=1;
+  fi
+
+  if ! validate_team_name "GH_TEAM_NAME" "${GH_TEAM_NAME}"; then
+    error_occurred=1;
+  fi
+  if ! validate_user_names "GH_TEAM_MEMBERS_EXCLUDED_FROM_REVIEWING" \
+       "${GH_TEAM_MEMBERS_EXCLUDED_FROM_REVIEWING[@]}"; then
+    error_occurred=1;
+  fi
+
+  if ! validate_non_empty_string "TARGET_PROJECT_TITLE" "${TARGET_PROJECT_TITLE}"; then
+    error_occurred=1;
+  fi
+
+  # Arrays validations
+  if ! validate_non_empty_array "TARGET_REPOS" "${TARGET_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_repo_names "TARGET_REPOS" "${TARGET_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_no_duplicates "TARGET_REPOS" "${TARGET_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+
+  if [[ "${VERBOSE}" -eq 1 ]]; then
+    echo "Validation of global variables from the 'source_config.sh' file:"
+  fi
+  # Variable validations
+  if ! validate_owner_name "SOURCE_REPOS_OWNER" "${SOURCE_REPOS_OWNER}"; then
+    error_occurred=1;
+  fi
+  if ! validate_owner_name "SOURCE_PROJECT_OWNER" "${SOURCE_PROJECT_OWNER}"; then
+    error_occurred=1;
+  fi
+  if ! validate_numeric "SOURCE_PROJECT_NUMBER" "${SOURCE_PROJECT_NUMBER}"; then
+    error_occurred=1;
+  fi
+
+  # Arrays validations
+  if ! validate_non_empty_array "SOURCE_REPOS" "${SOURCE_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_repo_names "SOURCE_REPOS" "${SOURCE_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_no_duplicates "SOURCE_REPOS" "${SOURCE_REPOS[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_non_empty_array "SOURCE_MAIN_REPO_INFO_FILES" "${SOURCE_MAIN_REPO_INFO_FILES[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_no_empty_array_elements "SOURCE_MAIN_REPO_INFO_FILES" "${SOURCE_MAIN_REPO_INFO_FILES[@]}"; then
+    error_occurred=1;
+  fi
+  if ! validate_no_duplicates "SOURCE_MAIN_REPO_INFO_FILES" "${SOURCE_MAIN_REPO_INFO_FILES[@]}"; then
+    error_occurred=1;
+  fi
+
+  # Check if any error occurred
+  if [[ "${error_occurred}" -eq 1 ]]; then
+    echo "{$ERR} Errors occurred during precheck. " >&2
+    exit 1
+  fi
+}
+
+main "precheck" "$@"
