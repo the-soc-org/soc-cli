@@ -53,4 +53,4 @@ unassign() {
   remove_repo_from_team "${repo}"
 }
 
-main "unassign" "$@"
+unassign "$1"

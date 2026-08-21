@@ -68,4 +68,4 @@ close() {
   fi
 }
 
-main "close" "$@"
+close

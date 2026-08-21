@@ -43,4 +43,4 @@ log() {
   get_project_data_as_json
 }
 
-main "log" "$@"
+log

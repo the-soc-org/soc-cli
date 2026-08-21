@@ -148,4 +148,4 @@ open() {
   set_repos_website
 }
 
-main "open" "$@"
+open

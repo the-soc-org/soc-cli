@@ -61,4 +61,4 @@ delete() {
   fi
 }
 
-main "delete" "$@"
+delete

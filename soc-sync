@@ -102,4 +102,4 @@ sync() {
   fi
 }
 
-main "sync" "$@"
+sync "${1:-}"

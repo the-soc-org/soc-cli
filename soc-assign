@@ -52,4 +52,4 @@ assign() {
   assign_repo_to_team "${repo}"
 }
 
-main "assign" "$@"
+assign "$1"

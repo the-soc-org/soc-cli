@@ -42,4 +42,4 @@ status() {
   get_team_repos_list
 }
 
-main "status" "$@"
+status

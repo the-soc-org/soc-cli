@@ -40,4 +40,4 @@ disinvite() {
   cancel_invitations_to_organization
 }
 
-main "disinvite" "$@"
+disinvite

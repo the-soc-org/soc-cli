@@ -109,4 +109,4 @@ precheck() {
   fi
 }
 
-main "precheck" "$@"
+precheck 1

@@ -43,4 +43,4 @@ invite() {
   invite_to_organization_team
 }
 
-main "invite" "$@"
+invite
