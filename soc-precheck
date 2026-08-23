@@ -29,7 +29,7 @@ precheck() {
   if [[ "${VERBOSE}" -eq 1 ]]; then
     echo "Commands validation:"
   fi
-  if ! check_if_gh_installed; then error_occurred=1; fi
+  if ! check_if_platform_cli_installed; then error_occurred=1; fi
   if ! check_if_git_installed; then error_occurred=1; fi
   if ! check_if_sed_installed; then error_occurred=1; fi
   if ! check_if_grep_installed; then error_occurred=1; fi
