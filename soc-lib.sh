@@ -642,6 +642,14 @@ delete_organization() {
 }
 
 # VALIDATION FUNCTIONS----------------------------------------------------------#
+# Check if the configured platform CLI is installed
+check_if_platform_cli_installed() {
+  if ! command -v "${SOC_PLATFORM_CLI}" &>/dev/null; then
+    echo "${ERR} Platform CLI '${SOC_PLATFORM_CLI}' is not installed." >&2
+    return 1
+  fi
+}
+
 # Check if GitHub CLI (gh) is installed
 check_if_gh_installed() {
   if ! command -v gh &> /dev/null; then
