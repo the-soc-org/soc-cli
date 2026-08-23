@@ -4,6 +4,19 @@
 # This file is intended to be sourced by shell scripts that need access to the
 # shared functionality defined here.
 
+# Set up strict error handling to make debugging easier and improve reliability.
+# - `+o errexit`: Disable the script's abort-on-first-error feature.
+# - `-o nounset`: Aborts the script if an uninitialized variable is used.
+# - `-o errtrace`: Allows the ERR trap to be inherited by functions, command substitutions, and subshells.
+
+set +o errexit
+set -o nounset
+set -o errtrace
+
+# Establish a trap for any error that occurs, calling the `error_handler`
+# function with the source file and line number as arguments.
+trap 'error_handler ${BASH_SOURCE} ${LINENO}' ERR
+
 # Define visual indicators for the terminal output to enhance readability.
 # - `OK`: White Heavy Check Mark (Unicode: U+2705), indicates success.
 # - `YUP`: Check Mark (Unicode: U+2713), also indicates confirmation or success.
