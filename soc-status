@@ -6,7 +6,8 @@
 set -e
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/gh-soc"
+source "${SCRIPT_DIR}/soc-lib.sh"
+source "${SCRIPT_DIR}/soc-lib-gh.sh"
 
 # If exist, source the configuration files
 if [[ -f 'user_config.sh' && -f 'source_config.sh' && -f 'system_config.sh' ]]; then
