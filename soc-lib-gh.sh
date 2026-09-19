@@ -130,7 +130,7 @@ get_file_sha() {
     if [[ -n "${sha}" ]]; then
       echo "${sha}"
     else
-      echo "${ERR} SHA for the '${source_file}' is emapty"
+      echo "${ERR} SHA for the '${source_file}' is empty"
       exit 1
     fi
   else
@@ -915,10 +915,42 @@ update_repo_without_cloning() {
 
   local file_sha
   local tmp_file
+  local info_file=''
+
+  for ((attempt=1; attempt<=10; attempt++)); do
+    if [[ -n "${info_file}" ]]; then
+      break
+    fi
+
+    for source_file in "${SOURCE_MAIN_REPO_INFO_FILES[@]}"; do
+      if gh api \
+         repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[0]}"/contents/"${source_file}" \
+         --jq '.sha' > /dev/null 2>&1; then
+        info_file="${source_file}"
+        break
+      fi
+    done
+
+    if [[ -z "${info_file}" ]]; then
+      sleep 1
+    fi
+  done
+
+  if [[ -z "${info_file}" ]]; then
+    echo "${ERR} None of the configured info files exists in '${GH_ORG_NAME}/${TARGET_REPOS[0]}'." >&2
+    echo "${ERR} Expected one of: ${SOURCE_MAIN_REPO_INFO_FILES[*]}" >&2
+    return 1
+  fi
 
   # Generate two temporary files and get sha of each source file
   for source_file in "${SOURCE_MAIN_REPO_INFO_FILES[@]}"; do
 
+    if ! gh api \
+       repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[0]}"/contents/"${source_file}" \
+       --jq '.sha' > /dev/null 2>&1; then
+      echo "${WRN} The '${source_file}' file does not exist in '${GH_ORG_NAME}/${TARGET_REPOS[0]}'; skipping it."
+      continue
+    fi
     # Create a temporary file
     tmp_file="$(mktemp)"
     if [[ $? -ne 0 ]]; then
@@ -957,6 +989,7 @@ update_repo_without_cloning() {
       echo
     fi
   done
+
   echo "${OK} The repo '${TARGET_REPOS[0]}' has been updated"
 }
 
