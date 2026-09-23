@@ -15,7 +15,9 @@ fork_repositories() {
        --fork-name "${TARGET_REPOS[i]}" \
        --clone=false
 
-    if [[ $? -ne 0 ]]; then
+    command_status=$?
+
+    if (( command_status != 0 )); then
       echo -n "${ERR} An error occurred while forking the " >&2
       echo -n "${SOURCE_REPOS_OWNER}/${SOURCE_REPOS[i]} repository to " >&2
       echo "${GH_ORG_NAME}/${TARGET_REPOS[i]}" >&2
@@ -36,7 +38,9 @@ create_private_repos_from_templates() {
        --template "${SOURCE_REPOS_OWNER}"/"${SOURCE_REPOS[i]}" \
        --private=true
 
-    if [[ $? -ne 0 ]]; then
+    command_status=$?
+
+    if (( command_status != 0 )); then
       echo -n "${ERR} An error occurred while creating the " >&2
       echo -n "${GH_ORG_NAME}/${TARGET_REPOS[i]} repository from " >&2
       echo "the ${SOURCE_REPOS_OWNER}/${SOURCE_REPOS[i]} template" >&2
@@ -55,7 +59,9 @@ delete_repositories() {
     # deleting a repo
     gh repo delete "$GH_ORG_NAME"/"${TARGET_REPOS[i]}" --yes
 
-    if [[ $? -ne 0 ]]; then
+    command_status=$?
+
+    if (( command_status != 0 )); then
       echo -n "${ERR} An error occurred while deleting the repository" >&2
       echo "$GH_ORG_NAME"/"${TARGET_REPOS[i]}" >&2
       exit 1
@@ -76,7 +82,9 @@ set_repo_as_private_template() {
        --visibility private \
        --template=true
 
-    if [[ $? -ne 0 ]]; then
+    command_status=$?
+
+    if (( command_status != 0 )); then
       echo -n "${ERR} An error occurred while setting the " >&2
       echo "$GH_ORG_NAME/${TARGET_REPOS[i]} repository as a private template" >&2
       exit 1
@@ -96,7 +104,9 @@ check_repo_gh_pages_enabled() {
                  repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[0]}" \
                  --jq '.has_pages')
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     echo "${has_pages}"
   else
     echo -n "${ERR} An error occurred while checking if GitHub Pages "
@@ -126,7 +136,9 @@ get_file_sha() {
            repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[0]}"/contents/"${source_file}" \
            --jq '.sha')
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     if [[ -n "${sha}" ]]; then
       echo "${sha}"
     else
@@ -161,7 +173,8 @@ download_repo_file_contents_to_tmp_file() {
      --jq '.content' | base64 --decode > "${tmp_file}"
 
   # Check whether the operation was successful
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo -n "${YUP} The content of the '${source_file}' has been written "
     echo "to the '${tmp_file}'"
   else
@@ -189,7 +202,9 @@ update_tmp_file() {
     # Perform the replacement in the temporary file
     sed -i "s/${SOURCE_REPOS_OWNER}/${GH_ORG_NAME}/g" "${tmp_file}"
 
-    if [[ $? -ne 0 ]]; then
+    command_status=$?
+
+    if (( command_status != 0 )); then
       echo -n "${ERR} An error occurred while updating the " >&2
       echo "temporary file: ${tmp_file}" >&2
       exit 1
@@ -210,7 +225,9 @@ update_tmp_file() {
       # Perform the replacement in the temporary file
       sed -i "s/${word_to_replace}/${new_word}/g" "${tmp_file}"
 
-      if [[ $? -ne 0 ]]; then
+      command_status=$?
+
+      if (( command_status != 0 )); then
         echo -n "${ERR} An error occurred while updating the " >&2
         echo "temporary file: '${tmp_file}'" >&2
         exit 1
@@ -238,7 +255,9 @@ get_project_id() {
                   --format 'json' \
                   --jq ".projects[] | select(.title == \"${TARGET_PROJECT_TITLE}\") | .id")
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
       echo "${project_id}"
   else
     echo -n "${ERR} An error occurred while obtaining the ID of the "
@@ -274,7 +293,9 @@ get_team_id() {
                --raw-field query="${query}" \
                --jq '.data.organization.team.id')
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     echo "${team_id}"
   else
     echo -n "${ERR} An error occurred while obtaining the ID of the "
@@ -312,7 +333,9 @@ get_user_id() {
                --raw-field query="${query}" \
                --jq '.data.user.id')
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     if [[ -n "${user_id}" ]]; then
       echo "${user_id}"
     else
@@ -345,7 +368,9 @@ get_team_number() {
                    /orgs/"${GH_ORG_NAME}"/teams/"${GH_TEAM_NAME}" \
                    --jq '.id')
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     echo "${team_number}"
   else
     echo -n "${ERR} An error occurred while obtaining the number of the "
@@ -374,7 +399,9 @@ get_invitation_id_by_email() {
                      /orgs/"${GH_ORG_NAME}"/invitations \
                      --jq ".[] | select(.email==\"${email}\") | .id")
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     echo "${invitation_id}"
   else
     echo -n "${ERR} An error occurred while obtaining the id of invitation to "
@@ -397,7 +424,9 @@ get_project_number() {
                   --format 'json' \
                   --jq ".projects[] | select(.title == \"${TARGET_PROJECT_TITLE}\") | .number")
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     echo "${project_number}"
   else
     echo -n "${ERR} An error occurred while obtaining the number of the "
@@ -420,7 +449,9 @@ create_repo_from_template() {
        --template "${GH_ORG_NAME}"/"${SOURCE_REPOS[i]}" \
        --clone=false
 
-    if [[ $? -ne 0 ]]; then
+    command_status=$?
+
+    if (( command_status != 0 )); then
       echo -n "${ERR} An error occurred while creating the " >&2
       echo "${GH_ORG_NAME}/${TARGET_REPOS[i]} repo from the " >&2
       echo "${GH_ORG_NAME}/${SOURCE_REPOS[i]} template" >&2
@@ -446,7 +477,8 @@ assign_repo_to_team() {
      --silent
 
   # Check if the command succeeded
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo -n "Repository '${repo}' was successfully added to "
     echo "the '${GH_TEAM_NAME}' team."
   else
@@ -471,7 +503,8 @@ remove_repo_from_team() {
      --silent
 
   # Check if the command succeeded
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo -n "${YUP} Repository '${repo}' was successfully removed from "
     echo "the '${GH_TEAM_NAME}' team."
   else
@@ -498,7 +531,8 @@ get_team_repos_list() {
      --jq '.[].name')
 
   # Check if the command succeeded
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo "${response}"
   else
     echo -n "${ERR} An error occurred while getting the repository list of " >&2
@@ -557,7 +591,9 @@ get_team_member_role() {
                 /orgs/"${GH_ORG_NAME}"/teams/"${GH_TEAM_NAME}"/memberships/"${member}" \
                 --jq '.role')
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     echo "${member_role}"
   else
     echo -n "${ERR} An error occurred while obtaining the '${GH_TEAM_NAME}'"
@@ -578,7 +614,8 @@ delete_team() {
      --silent
 
   # Check whether the operation was successful
-    if [[ $? -eq 0 ]]; then
+    command_status=$?
+    if (( command_status == 0 )); then
       echo -n "${OK} The '${GH_TEAM_NAME}' team has been deleted "
       echo "from the '${GH_ORG_NAME}' organization."
     else
@@ -600,7 +637,8 @@ delete_organization() {
      --silent
 
   # Check whether the operation was successful
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo "${OK} The '${GH_ORG_NAME}' organization has been deleted "
   else
     echo -n "${ERR} An error occurred while deleting the " >&2
@@ -795,7 +833,8 @@ swich_on_gh_pages() {
   local has_pages
 
   has_pages=$(check_repo_gh_pages_enabled)
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     if [[ "${has_pages}" == true ]]; then
       echo -n "${WRN} GitHub Pages for ${GH_ORG_NAME}/${TARGET_REPOS[0]} "
       echo "is already enabled"
@@ -814,7 +853,9 @@ swich_on_gh_pages() {
                         --silent \
                         --input -
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     echo -n "${OK} GitHub Pages has been enabled on the '${GH_REPO_BRANCH}' "
     echo "branch in the ${GH_ORG_NAME}/${TARGET_REPOS[0]} repository."
     echo -n "${WRN} Please be patient: the creation process for the GitHub "
@@ -838,7 +879,9 @@ set_repos_website() {
     gh repo edit "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}" \
        --homepage https://"${GH_ORG_NAME}".github.io/"${TARGET_REPOS[0]}"/
 
-    if [[ $? -ne 0 ]]; then
+    command_status=$?
+
+    if (( command_status != 0 )); then
       echo -n "${ERR} An error occurred while setting a website link in the " >&2
       echo "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}} repository" >&2
       exit 1
@@ -858,7 +901,9 @@ set_repos_descriptions() {
     gh repo edit "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}" \
        --description "${TARGET_REPO_DESCRIPTION}"
 
-    if [[ $? -ne 0 ]]; then
+    command_status=$?
+
+    if (( command_status != 0 )); then
       echo -n "${ERR} An error occurred while setting a website link in the " >&2
       echo "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}} repository" >&2
       exit 1
@@ -889,12 +934,13 @@ update_repo_file_contents() {
      --header "X-GitHub-Api-Version: ${GH_API_VERSION_HEADER}" \
      repos/"${GH_ORG_NAME}"/"${TARGET_REPOS[0]}"/contents/"${source_file}" \
      --raw-field "message=update ${source_file}" \
-     --raw-field "content=$(base64 < ${tmp_file})" \
+    --raw-field "content=$(base64 < "${tmp_file}")" \
      --raw-field "sha=${file_sha}" \
      --silent
 
   # Check whether the operation was successful
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo "${YUP} The ${source_file} has been updated"
   else
     echo "${ERR} An error occurred while updating the '${source_file}'" >&2
@@ -953,7 +999,8 @@ update_repo_without_cloning() {
     fi
     # Create a temporary file
     tmp_file="$(mktemp)"
-    if [[ $? -ne 0 ]]; then
+    command_status=$?
+    if (( command_status != 0 )); then
       echo "${ERR} Unable to create a temporary file" >&2
       exit 1
     else
@@ -964,11 +1011,13 @@ update_repo_without_cloning() {
     # script fails or is interrupted, the temporary file does not remain on disk.
     # NOTE: ShellCheck may warn about SC2064 here (variable expansion at trap assignment), but this
     # is intentional.
+    # shellcheck disable=SC2064
     trap "remove_tmp_file ${tmp_file}" EXIT
 
     # Get the file SHA
     file_sha=$(get_file_sha "${source_file}")
-    if [[ $? -eq 0 ]]; then
+    command_status=$?
+    if (( command_status == 0 )); then
       echo "${YUP} The SHA for the '${source_file}' file has been obtained"
     else
       echo "${file_sha}" >&2
@@ -1012,7 +1061,8 @@ update_org_default_repo_permission() {
      --silent
 
   ## Check whether the operation was successful
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo -n "${OK} The '${GH_ORG_NAME}' organization default repo permission "
     echo  "setting has been updated with '${repo_permission}' value"
   else
@@ -1042,7 +1092,8 @@ update_org_members_can_fork_private_repo() {
      --silent
 
   ## Check whether the operation was successful
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo -n "${OK} The ${GH_ORG_NAME} organization 'members can fork private repo'"
     echo "setting has been updated with '${fork_private}' value"
   else
@@ -1065,7 +1116,9 @@ create_team() {
   # Retrieve the team ID
   team_id=$(get_team_id)
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     if [[ -n "${team_id}" ]]; then
       echo -n "${WRN} The '${GH_TEAM_NAME}' team already exists "
       echo "in the '${GH_ORG_NAME}' organization."
@@ -1089,7 +1142,8 @@ create_team() {
      --silent
 
   # Checking if the operation was successful
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo -n "${OK} The team '${GH_TEAM_NAME}' has been created "
     echo "in the organization '${GH_ORG_NAME}'."
   else
@@ -1106,7 +1160,8 @@ create_project_from_template() {
   local project_number
 
   project_number=$(get_project_number)
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     if [[ -n "${project_number}" ]]; then
       echo -n "${WRN} Project with the '${TARGET_PROJECT_TITLE}' title "
       echo "already exists in the '${GH_ORG_NAME}' organization."
@@ -1122,7 +1177,9 @@ create_project_from_template() {
      --target-owner "${GH_ORG_NAME}" \
      --title "${TARGET_PROJECT_TITLE}"
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     echo "${OK} The project '${TARGET_PROJECT_TITLE}' has been created."
   else
     echo -n "${ERR} An error occurred while copying the project " >&2
@@ -1148,7 +1205,9 @@ clone_repositories() {
 
     gh repo clone "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}"
 
-    if [[ $? -ne 0 ]]; then
+    command_status=$?
+
+    if (( command_status != 0 )); then
       echo -n "${ERR} An error occurred while cloning the " >&2
       echo "${GH_ORG_NAME}/${TARGET_REPOS[i]} repository" >&2
       exit 1
@@ -1259,7 +1318,8 @@ lock_branch() {
        --silent
 
     # Check whether the operation was completed
-    if [[ $? -eq 0 ]]; then
+    command_status=$?
+    if (( command_status == 0 )); then
       echo -n "${YUP} The branch protection rule 'lock branch' "
       echo -n "for the '${GH_REPO_BRANCH}' branch on the repository "
       echo "${GH_ORG_NAME}/${TARGET_REPOS[i]} has been set."
@@ -1296,7 +1356,8 @@ require_conversation_resolution_before_merging() {
        --silent
 
     # Check whether the operation was successful
-    if [[ $? -eq 0 ]]; then
+    command_status=$?
+    if (( command_status == 0 )); then
       echo -n "${YUP} The branch protection rule "
       echo -n "'Require conversation resolution before merging' for the "
       echo -n "'${GH_REPO_BRANCH}' branch on the repository "
@@ -1324,7 +1385,9 @@ link_project_to_team() {
   # Retrieve the project ID.
   project_id=$(get_project_id)
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     if [[ -n "${project_id}" ]]; then
       echo -n "${YUP} Obtaining the ID of the '${TARGET_PROJECT_TITLE}' project"
       echo " has been completed"
@@ -1343,7 +1406,9 @@ link_project_to_team() {
   # Retrieve the team ID
   team_id=$(get_team_id)
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     if [[ -n "${team_id}" ]]; then
       echo -n "${YUP} Obtaining the ID of the '${GH_TEAM_NAME}' team"
       echo " has been completed"
@@ -1378,7 +1443,8 @@ link_project_to_team() {
 
   # Check the exit status of the last command to verify if the link operation
   # was successful.
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo -n "${OK} The '${TARGET_PROJECT_TITLE}' project has been linked "
     echo "to the '${GH_TEAM_NAME}' team"
   else
@@ -1404,7 +1470,9 @@ enable_team_review_assignment() {
 
   team_id=$(get_team_id)
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     if [[ -n "${team_id}" ]]; then
       echo -n "${YUP} Obtaining the ID of the '${GH_TEAM_NAME}' team"
       echo " has been completed"
@@ -1423,7 +1491,8 @@ enable_team_review_assignment() {
   # Loop through all logins and execute a GraphQL query for each of them
   for gh_login in "${github_logins[@]}"; do
     fetched_user_id=$(get_user_id "${gh_login}")
-    if [[ $? -eq 0 ]]; then
+    command_status=$?
+    if (( command_status == 0 )); then
       user_ids+=("\"$fetched_user_id\"")  # Adding ID as a string to the array
       echo -n "${YUP} Obtaining the ID of the '${gh_login}' "
       echo "user has been completed"
@@ -1463,7 +1532,8 @@ enable_team_review_assignment() {
      --silent
 
   # Check whether the operation was successful
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo -n "${OK} The review assignment has benn enabled "
     echo "for the '${GH_TEAM_NAME}' team"
   else
@@ -1492,7 +1562,8 @@ invite_to_organization_team() {
 
   # Get the team ID
   team_number=$(get_team_number)
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo -n "${YUP} Obtaining the ID of the '${GH_TEAM_NAME}' team"
     echo " has been completed"
   else
@@ -1515,7 +1586,8 @@ invite_to_organization_team() {
                 --include)
 
   # Check whether the operation was successful
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     echo "${YUP} Invitation to join the '${GH_ORG_NAME}' sent to: ${email}."
   else
     # Extract the HTTP status code from the first line of the 'response' and and
@@ -1554,7 +1626,8 @@ cancel_invitations_to_organization() {
   while IFS= read -r email; do
     # Fetch all pending invitations and find the one matching our email
     invitation_id=$(get_invitation_id_by_email "${email}")
-    if [[ $? -eq 0 ]]; then
+    command_status=$?
+    if (( command_status == 0 )); then
       if [[ -z "${invitation_id}" ]]; then
 	echo "${WRN} No pending invitation found for: ${email}."
 	continue
@@ -1570,7 +1643,9 @@ cancel_invitations_to_organization() {
        /orgs/"${GH_ORG_NAME}"/invitations/"${invitation_id}" \
        --silent
 
-    if [[ $? -eq 0 ]]; then
+    command_status=$?
+
+    if (( command_status == 0 )); then
       echo "${YUP} Cancelled the invitation for: '${email}'."
     else
       echo "${ERR} Failed to cancel the invitation for: '${email}'." >&2
@@ -1599,7 +1674,8 @@ get_project_data_as_json() {
   fi
 
   project_number=$(get_project_number)
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     if [[ -n "${project_number}" ]]; then
       echo -n "${YUP} Obtaining the number of the '${TARGET_PROJECT_TITLE}' "
       echo "project has been completed"
@@ -1624,7 +1700,9 @@ get_project_data_as_json() {
     --limit "${GH_PROJECT_MAX_ITEM}" \
     --format json | jq '.' > "${filename}"
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     echo -n "${OK} The project '${TARGET_PROJECT_TITLE}' has been logged "
     echo "to the file: ${filename}"
   else
@@ -1640,7 +1718,8 @@ close_project() {
   local project_number
 
   project_number=$(get_project_number)
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     if [[ -n "${project_number}" ]]; then
       echo -n "${YUP} Obtaining the number of the '${TARGET_PROJECT_TITLE}' "
       echo "project has been completed"
@@ -1663,7 +1742,9 @@ close_project() {
   gh project close "${project_number}" \
      --owner "${GH_ORG_NAME}"
 
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+
+  if (( command_status == 0 )); then
     echo "${OK} The project '${TARGET_PROJECT_TITLE}' has been closed"
   else
     echo -n "${ERR} An error occurred while closing the project " >&2
@@ -1679,7 +1760,8 @@ delete_project() {
   local project_number
 
   project_number=$(get_project_number)
-  if [[ $? -eq 0 ]]; then
+  command_status=$?
+  if (( command_status == 0 )); then
     if [[ -n "${project_number}" ]]; then
       echo -n "${YUP} Obtaining the number of the '${TARGET_PROJECT_TITLE}' "
       echo "project has been completed"
@@ -1702,7 +1784,9 @@ delete_project() {
   gh project delete "${project_number}" \
      --owner "${GH_ORG_NAME}"
 
-  if [[ $? -ne 0 ]]; then
+  command_status=$?
+
+  if (( command_status != 0 )); then
     echo -n "${ERR} An error occurred while deleting the " >&2
     echo "'${TARGET_PROJECT_TITLE}' from '${GH_ORG_NAME}'" >&2
     exit 1
@@ -1724,7 +1808,8 @@ remove_team_members_from_org() {
 
   for member in "${team_members[@]}"; do
     member_role=$(get_team_member_role "${member}")
-    if [[ $? -eq 0 ]]; then
+    command_status=$?
+    if (( command_status == 0 )); then
       echo -n "${YUP} Obtaining the team role of '${member}' in the "
       echo "'${GH_TEAM_NAME}' team has been completed"
     else
@@ -1742,7 +1827,9 @@ remove_team_members_from_org() {
          /orgs/"${GH_ORG_NAME}"/members/"${member}" \
          --silent
 
-      if [[ $? -eq 0 ]]; then
+      command_status=$?
+
+      if (( command_status == 0 )); then
         echo -n "'${member}' successfully removed from the '${GH_ORG_NAME}' "
         echo "organization."
       else
@@ -1765,12 +1852,12 @@ delete() {
   # Asking the user for confirmation for deleting the organization
   echo -n "${WRN} Are you sure you want to delete the organization "
   echo "'${GH_ORG_NAME}'? (no/yes) [no]:"
-  read user_confirm
+  read -r user_confirm
 
   if [[ "${user_confirm}" == 'yes' ]]; then
     # Requesting the user to type the organization name for final confirmation
     echo "${WRN} Please type the name of the organization to confirm deletion: "
-    read typed_org_name
+    read -r typed_org_name
 
     if [[ "${typed_org_name}" == "${GH_ORG_NAME}" ]]; then
       echo 'Running delete_organization()'
@@ -1799,14 +1886,14 @@ close() {
   # Asking the user for confirmation for deleting the team
   echo -n "${WRN} Are you sure you want to delete the team '${GH_TEAM_NAME}' "
   echo "from organization '${GH_ORG_NAME}'? (no/yes) [no]:"
-  read user_confirm
+  read -r user_confirm
 
   # Asking the user for confirmation for removing members from an organization
   if [[ "${user_confirm}" == 'yes' ]]; then
     echo -n "${WRN} Do you want the team members, excluding the team "
     echo -n "maintainers, to be removed from the organization '${GH_ORG_NAME}'?"
     echo " (no/yes) [no]:"
-    read user_confirm
+    read -r user_confirm
 
     if [[ "${user_confirm}" == 'yes' ]]; then
       echo 'Running remove_team_members_from_org()'
@@ -2006,7 +2093,7 @@ unsync() {
     # Asking the user for confirmation for removing the project
     echo -n "${WRN} Are you sure you want to remove the ${TARGET_PROJECT_TITLE}"
     echo " project from the organization '${GH_ORG_NAME}'? (no/yes) [no]:"
-    read user_confirm
+    read -r user_confirm
 
     if [[ "${user_confirm}" == 'yes' ]]; then
       echo 'Running delete_project()'
@@ -2032,7 +2119,7 @@ unsync() {
     echo "repositories listed in 'TARGET_REPOS' array: "
     printf "%s\n" "${TARGET_REPOS[@]}"
     echo "from the organization '${GH_ORG_NAME}'? (no/yes) [no]:"
-    read user_confirm
+    read -r user_confirm
 
     if [[ "${user_confirm}" == 'yes' ]]; then
       echo 'Running delete_repositories()'

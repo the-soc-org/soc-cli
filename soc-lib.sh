@@ -22,10 +22,10 @@ trap 'error_handler ${BASH_SOURCE} ${LINENO}' ERR
 # - `YUP`: Check Mark (Unicode: U+2713), also indicates confirmation or success.
 # - `WRN`: High Voltage Sign (Unicode: U+26A1), used to signal warnings or cautions.
 # - `ERR`: Cross Mark (Unicode: U+274C), indicates errors or failure.
-OK=✅
-YUP=✓
-WRN=⚡
-ERR=❌
+export OK=$'\u2705'
+export YUP=$'\u2713'
+export WRN=$'\u26A1'
+export ERR=$'\u274C'
 
 # Handles errors by printing the source file and line number where the error
 # occurred. Usage: error_handler <source_file> <line_number>
