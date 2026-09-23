@@ -46,7 +46,7 @@ unsync() {
     # Asking the user for confirmation for removing the project
     echo -n "${WRN} Are you sure you want to remove the ${TARGET_PROJECT_TITLE}"
     echo " project from the organization '${GH_ORG_NAME}'? (no/yes) [no]:"
-    read user_confirm
+    read -r user_confirm
 
     if [[ "${user_confirm}" == 'yes' ]]; then
       echo 'Running delete_project()'
@@ -72,7 +72,7 @@ unsync() {
     echo "repositories listed in 'TARGET_REPOS' array: "
     printf "%s\n" "${TARGET_REPOS[@]}"
     echo "from the organization '${GH_ORG_NAME}'? (no/yes) [no]:"
-    read user_confirm
+    read -r user_confirm
 
     if [[ "${user_confirm}" == 'yes' ]]; then
       echo 'Running delete_repositories()'

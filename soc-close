@@ -50,14 +50,14 @@ close() {
   # Asking the user for confirmation for deleting the team
   echo -n "${WRN} Are you sure you want to delete the team '${GH_TEAM_NAME}' "
   echo "from organization '${GH_ORG_NAME}'? (no/yes) [no]:"
-  read user_confirm
+  read -r user_confirm
 
   # Asking the user for confirmation for removing members from an organization
   if [[ "${user_confirm}" == 'yes' ]]; then
     echo -n "${WRN} Do you want the team members, excluding the team "
     echo -n "maintainers, to be removed from the organization '${GH_ORG_NAME}'?"
     echo " (no/yes) [no]:"
-    read user_confirm
+    read -r user_confirm
 
     if [[ "${user_confirm}" == 'yes' ]]; then
       echo 'Running remove_team_members_from_org()'

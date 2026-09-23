@@ -43,12 +43,12 @@ delete() {
   # Asking the user for confirmation for deleting the organization
   echo -n "${WRN} Are you sure you want to delete the organization "
   echo "'${GH_ORG_NAME}'? (no/yes) [no]:"
-  read user_confirm
+  read -r user_confirm
 
   if [[ "${user_confirm}" == 'yes' ]]; then
     # Requesting the user to type the organization name for final confirmation
     echo "${WRN} Please type the name of the organization to confirm deletion: "
-    read typed_org_name
+    read -r typed_org_name
 
     if [[ "${typed_org_name}" == "${GH_ORG_NAME}" ]]; then
       echo 'Running delete_organization()'
