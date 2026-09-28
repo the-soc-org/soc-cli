@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="${SCRIPT_DIR}:${PATH}"
+
 if [[ "$#" -eq 0 ]]; then
   echo -n "${WRN} Usage: soc [init|precheck|sync|unsync|open|close|"
   echo "invite|disinvite|assign|unassign|log|status|delete]"
