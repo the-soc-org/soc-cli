@@ -362,6 +362,107 @@ validate_no_duplicates() {
   "${is_set_nounset}" || set +u
 }
 
+# Updates repository files without cloning the entire repository.
+# This function iterates through a list of files, performing the following steps
+# for each:
+# 1. Creates a temporary file to work with the file's content.
+# 2. Retrieves the SHA of the current file in the repository to allow for its update.
+# 3. Downloads the file content from the repository to the temporary file.
+# 4. Applies changes to the content within the temporary file.
+# 5. Uploads the updated content back to the repository, replacing the old file.
+#
+# NOTE: This is the shared, platform independent workflow. Every platform
+# dependent operation is delegated to a hook function that must be provided by
+# the sourced platform specific library (for GitHub it is the 'soc-lib-gh.sh'
+# file): 'get_target_repo_full_name', 'check_if_repo_file_exists',
+# 'get_file_sha', 'download_repo_file_contents_to_tmp_file', 'update_tmp_file'
+# and 'update_repo_file_contents'.
+# Usage: update_repo_without_cloning
+update_repo_without_cloning() {
+
+  local file_sha
+  local tmp_file
+  local info_file=''
+  local repo_full_name
+
+  # Get the full name ('owner/repository') of the repository to update
+  repo_full_name="$(get_target_repo_full_name)"
+
+  for ((attempt=1; attempt<=10; attempt++)); do
+    if [[ -n "${info_file}" ]]; then
+      break
+    fi
+
+    for source_file in "${SOURCE_MAIN_REPO_INFO_FILES[@]}"; do
+      if check_if_repo_file_exists "${source_file}"; then
+        info_file="${source_file}"
+        break
+      fi
+    done
+
+    if [[ -z "${info_file}" ]]; then
+      sleep 1
+    fi
+  done
+
+  if [[ -z "${info_file}" ]]; then
+    echo "${ERR} None of the configured info files exists in '${repo_full_name}'." >&2
+    echo "${ERR} Expected one of: ${SOURCE_MAIN_REPO_INFO_FILES[*]}" >&2
+    return 1
+  fi
+
+  # Generate two temporary files and get sha of each source file
+  for source_file in "${SOURCE_MAIN_REPO_INFO_FILES[@]}"; do
+
+    if ! check_if_repo_file_exists "${source_file}"; then
+      echo "${WRN} The '${source_file}' file does not exist in '${repo_full_name}'; skipping it."
+      continue
+    fi
+    # Create a temporary file
+    tmp_file="$(mktemp)"
+    command_status=$?
+    if (( command_status != 0 )); then
+      echo "${ERR} Unable to create a temporary file" >&2
+      exit 1
+    else
+      echo "${YUP} Temporary file '${tmp_file}' has been created"
+    fi
+
+    # Remove the temporary file if the script exits unexpectedly. This ensures that even if the
+    # script fails or is interrupted, the temporary file does not remain on disk.
+    # NOTE: ShellCheck may warn about SC2064 here (variable expansion at trap assignment), but this
+    # is intentional.
+    # shellcheck disable=SC2064
+    trap "remove_tmp_file ${tmp_file}" EXIT
+
+    # Get the file SHA
+    file_sha=$(get_file_sha "${source_file}")
+    command_status=$?
+    if (( command_status == 0 )); then
+      echo "${YUP} The SHA for the '${source_file}' file has been obtained"
+    else
+      echo "${file_sha}" >&2
+      exit 1
+    fi
+
+    # Download the file contents to the temporary file
+    download_repo_file_contents_to_tmp_file "${source_file}" "${tmp_file}"
+    # Update the temporary file
+    update_tmp_file "${tmp_file}"
+    # Update the repository file contents
+    update_repo_file_contents "${tmp_file}" "${file_sha}" "${source_file}"
+
+    # Remove the temporary file
+    if [[ -f "${tmp_file}" ]]; then
+      rm -f "${tmp_file}"
+      echo "${YUP} Temporary file ${tmp_file} has been deleted"
+      echo
+    fi
+  done
+
+  echo "${OK} The repo '${TARGET_REPOS[0]}' has been updated"
+}
+
 # TODO:
 # Add function validations on global variables from system_config.sh
 # END:
