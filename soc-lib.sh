@@ -54,6 +54,50 @@ check_if_platform_cli_installed() {
   fi
 }
 
+# Checks if repositories listed in the array in the config file exist. Aborts
+# the script with an error message if any repository does not exist. Usage:
+# check_if_repos_exist <repos_owner> <repos_name> <repos>
+check_if_repos_exist() {
+
+  if [[ "$#" -lt 2 ]]; then
+    echo -n "${ERR} Insufficient arguments provided for the " >&2
+    echo "'${FUNCNAME[0]}' function." >&2
+    exit 1
+  fi
+
+  local repos_owner="$1"
+  shift # Remove the argument
+  local repos_name="$1"
+  shift # Remove the argument to treat the rest as an array
+  local -a repos=("$@")
+
+  # Initialize a flag to track if any repository does not exist
+  local repo_noexists=0
+
+  for ((i=0; i<"${#repos[@]}"; i++)); do
+    # Check if the repository exists
+    if check_if_platform_repo_exists "${repos_owner}" "${repos[i]}"; then
+      echo -n "${YUP} Repository ${repos_owner}/${repos[i]} "
+      echo "exists as expected."
+    else
+      echo "${ERR} Repository ${repos_owner}/${repos[i]} no exists." >&2
+      repo_noexists=1
+    fi
+  done
+
+  # Check the flag and exit if any repository does not exist
+  if [[ "${repo_noexists}" -eq 1 ]]; then
+    echo -n "${ERR} For proper functioning of '${FUNCNAME[1]}' command, " >&2
+    echo -n "it is required that the repositories listed in the " >&2
+    echo -n "'${repos_name}' array in the config file exist " >&2
+    echo "on the '${repos_owner}' platform account." >&2
+    exit 1
+  else
+    echo -n "${OK} The check to see if the '${repos_name}' "
+    echo "repositories exist has been completed."
+  fi
+}
+
 check_if_git_installed() {
   if ! command -v git &> /dev/null; then
     echo -n "${ERR} 'git' is not installed on your computer. " >&2
