@@ -1088,40 +1088,18 @@ create_team() {
   fi
 }
 
-# Creates a new project in the GitHub organization from a specified template.
-# It's intended to copy a project from another source into the target
-# organization under a new title. Usage: create_project_from_template
-create_project_from_template() {
+# Copies a project from a platform-specific project template.
+# Usage: copy_project_from_template <source_number> <source_owner> <title>
+copy_project_from_template() {
 
-  local project_number
+  local source_number="$1"
+  local source_owner="$2"
+  local project_title="$3"
 
-  project_number=$(get_project_number)
-  command_status=$?
-  if (( command_status == 0 )); then
-    if [[ -n "${project_number}" ]]; then
-      echo -n "${WRN} Project with the '${TARGET_PROJECT_TITLE}' title "
-      echo "already exists in the '${GH_ORG_NAME}' organization."
-      return 0
-    fi
-  else
-    echo "${project_number}" >&2
-    exit 1
-  fi
-
-  gh project copy "${SOURCE_PROJECT_NUMBER}" \
-     --source-owner "${SOURCE_PROJECT_OWNER}" \
+  gh project copy "${source_number}" \
+     --source-owner "${source_owner}" \
      --target-owner "${GH_ORG_NAME}" \
-     --title "${TARGET_PROJECT_TITLE}"
-
-  command_status=$?
-
-  if (( command_status == 0 )); then
-    echo "${OK} The project '${TARGET_PROJECT_TITLE}' has been created."
-  else
-    echo -n "${ERR} An error occurred while copying the project " >&2
-    echo "from ${SOURCE_PROJECT_OWNER} to '${GH_ORG_NAME}'." >&2
-    exit 1
-  fi
+     --title "${project_title}"
 }
 
 # Clones the specified repositories from the GitHub organization to the local
