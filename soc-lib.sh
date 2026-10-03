@@ -108,6 +108,53 @@ check_if_git_installed() {
   fi
 }
 
+# Checks if repositories in source repo owner platform account and listed in the
+# array in the config file are templates. Attempt to make them templates if they
+# are not already. Aborts the script with an error message if any repository is
+# not a template. Usage: ensure_repos_as_templates <repos_owner> <repos_name>
+# <repos>
+ensure_repos_as_templates() {
+
+  local repos_owner="$1"
+  shift # Remove the argument
+  local repos_name="$1"
+  shift # Remove the argument to treat the rest as an array
+  local -a repos=("$@")
+
+  # Initialize a flag to track if any repository is not a template
+  local repo_is_not_template=0
+
+  for ((i=0; i<"${#repos[@]}"; i++)); do
+    # Check if the repository is a template
+    if check_if_repo_is_template "${repos_owner}" "${repos[i]}"; then
+      echo -n "${YUP} Repository ${repos_owner}/${repos[i]} "
+      echo "is a template as expected."
+    else
+      echo -n "${WRN} Repository ${repos_owner}/${repos[i]} is not a template. "
+      echo "Attempting to make it a template..."
+      # Attempt to convert the repository to a template
+      if set_repo_as_template "${repos_owner}" "${repos[i]}"; then
+        echo "${YUP} Successfully transformed into a template."
+      else
+        echo "${WRN} Failed to transform into a template."
+        repo_is_not_template=1
+      fi
+    fi
+  done
+
+  # Check the flag and exit with a error if any repository is not a template.
+  if [[ "${repo_is_not_template}" -eq 1 ]]; then
+    echo -n "${ERR} For proper functioning of '${FUNCNAME[1]}' command, " >&2
+    echo -n "it is required that the repositories in '${repos_owner}' " >&2
+    echo -n "platform account and listed in the '${repos_name}' array " >&2
+    echo "in the config file are templates." >&2
+    exit 1
+  else
+    echo -n "${OK} The check to see if the '${repos_name}' repositories "
+    echo "are templates has been completed."
+  fi
+}
+
 check_git_configs() {
 
   local git_user_name
