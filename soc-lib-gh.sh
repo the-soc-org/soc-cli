@@ -706,45 +706,6 @@ check_if_platform_repo_exists() {
   gh repo view "${repos_owner}/${repo_name}" &> /dev/null
 }
 
-# Checks if repositories listed in the array in the config file do not already
-# exist. Aborts the script with an warning message if any repository already
-# exists. Usage: check_if_repos_noexist <repos_owner> <repos_name> <repos>
-check_if_repos_noexist() {
-
-  local repos_owner="$1"
-  shift # Remove the argument
-  local repos_name="$1"
-  shift # Remove the argument to treat the rest as an array
-  local -a repos=("$@")
-
-  # Initialize a flag to track if any repository already exists
-  local repo_exists=0
-
-  for ((i=0; i<"${#repos[@]}"; i++)); do
-    # Check if the repository exists
-    if ! gh repo view "${repos_owner}/${repos[i]}" &> /dev/null; then
-      echo -n "${YUP} Repository ${repos_owner}/${repos[i]} "
-      echo "not yet exists as expected."
-    else
-      echo "${WRN} Repository ${repos_owner}/${repos[i]} already exists."
-      repo_exists=1
-    fi
-  done
-
-  # Check the flag and exit with a warning if any repository already exists. The
-  # presence of repositories may be due to synchronizing repositories beforehand
-  # or already having own repositories with the same names as the source ones.
-  if [[ "${repo_exists}" -eq 1 ]]; then
-    echo -n "${WRN} One or more repositories listed in the '${repos_name}'"
-    echo -n " array in the config file already exist on the "
-    echo "'${repos_owner}' GitHub account."
-    exit 1
-  else
-    echo -n "${OK} The check to see if the '${repos_name}' "
-    echo "repositories exist has been completed."
-  fi
-}
-
 # Checks whether a repository is marked as a template on GitHub.
 # Usage: check_if_repo_is_template <repos_owner> <repo_name>
 check_if_repo_is_template() {
