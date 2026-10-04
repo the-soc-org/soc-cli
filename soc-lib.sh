@@ -54,6 +54,30 @@ check_if_platform_cli_installed() {
   fi
 }
 
+# Sets descriptions for the target repositories in the target organization.
+# Usage: set_repos_descriptions
+set_repos_descriptions() {
+
+  # Iterate through repositories
+  for ((i=0; i<"${#TARGET_REPOS[@]}"; i++)); do
+
+    # Setting website link in the target repositories"
+    set_repo_description \
+      "${GH_ORG_NAME}" \
+      "${TARGET_REPOS[i]}" \
+      "${TARGET_REPO_DESCRIPTION}"
+
+    command_status=$?
+
+    if (( command_status != 0 )); then
+      echo -n "${ERR} An error occurred while setting a website link in the " >&2
+      echo "${GH_ORG_NAME}"/"${TARGET_REPOS[i]} repository" >&2
+      exit 1
+    fi
+  done
+  echo "$OK Setting the website links has been completed"
+}
+
 # Create repositories in GH_ORG_NAME from SOURCE_REPOS_OWNER templates. Usage:
 # create_private_repos_from_templates
 create_private_repos_from_templates() {

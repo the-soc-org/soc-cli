@@ -783,26 +783,16 @@ set_repos_website() {
   echo "$OK Setting the website links has been completed"
 }
 
-# Sets descriptions for the target repositories in the GitHub organization.
-# Usage: set_repos_descriptions
-set_repos_descriptions() {
+# Sets the description of a repository in the GitHub organization.
+# Usage: set_repo_description <repos_owner> <repo_name> <description>
+set_repo_description() {
 
-  # Iterate through repositories
-  for ((i=0; i<"${#TARGET_REPOS[@]}"; i++)); do
+  local repos_owner="$1"
+  local repo_name="$2"
+  local description="$3"
 
-    # Setting website link in the target repositories"
-    gh repo edit "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}" \
-       --description "${TARGET_REPO_DESCRIPTION}"
-
-    command_status=$?
-
-    if (( command_status != 0 )); then
-      echo -n "${ERR} An error occurred while setting a website link in the " >&2
-      echo "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}} repository" >&2
-      exit 1
-    fi
-  done
-  echo "$OK Setting the website links has been completed"
+  gh repo edit "${repos_owner}"/"${repo_name}" \
+     --description "${description}"
 }
 
 # Updates the contents of a file in a repository by uploading a new version.
