@@ -175,61 +175,6 @@ download_repo_file_contents_to_tmp_file() {
   fi
 }
 
-# Updates the contents of a temporary file by replacing specific text.
-# It checks for the presence of SOURCE_REPOS_OWNER and then replaces it with GH_ORG_NAME.
-# Additionally, it iterates through repositories to replace other specified text.
-update_tmp_file() {
-
-  # Check if the correct number of non-empty arguments is passed
-  if [[ "$#" -ne 1 || -z "$1" ]]; then
-    echo "${ERR} Invalid number of arguments or empty argument." >&2
-    echo "${WRN} Usage: ${FUNCNAME[0]} <temporary_file>"
-    exit 1
-  fi
-
-  local tmp_file="$1"
-
-  if grep -q "${SOURCE_REPOS_OWNER}" "${tmp_file}"; then
-    # Perform the replacement in the temporary file
-    sed -i "s/${SOURCE_REPOS_OWNER}/${GH_ORG_NAME}/g" "${tmp_file}"
-
-    command_status=$?
-
-    if (( command_status != 0 )); then
-      echo -n "${ERR} An error occurred while updating the " >&2
-      echo "temporary file: ${tmp_file}" >&2
-      exit 1
-    fi
-  else
-    echo -n "${WRN} Text to be replaced '${SOURCE_REPOS_OWNER}' "
-    echo "was not found in the file: '${tmp_file}'."
-  fi
-
-
-  # Iterate through repositories
-  for ((i=1; i<"${#SOURCE_REPOS[@]}"; i++)); do
-
-    local word_to_replace="${SOURCE_REPOS[i]}"
-    local new_word="${TARGET_REPOS[i]}"
-
-    if grep -q "${word_to_replace}" "${tmp_file}"; then
-      # Perform the replacement in the temporary file
-      sed -i "s/${word_to_replace}/${new_word}/g" "${tmp_file}"
-
-      command_status=$?
-
-      if (( command_status != 0 )); then
-        echo -n "${ERR} An error occurred while updating the " >&2
-        echo "temporary file: '${tmp_file}'" >&2
-        exit 1
-      fi
-    else
-      echo -n "${WRN} Text to be replaced '${word_to_replace}' "
-      echo "was not found in the file: '${tmp_file}'."
-    fi
-  done
-}
-
 # Retrieves the unique ID of a project by its title within a GitHub
 # organization.  This ID is essential for operations that modify project
 # settings or link the project to other entities. The function lists all
