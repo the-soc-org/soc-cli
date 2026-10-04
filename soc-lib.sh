@@ -54,6 +54,31 @@ check_if_platform_cli_installed() {
   fi
 }
 
+# Create repositories in GH_ORG_NAME from SOURCE_REPOS_OWNER templates. Usage:
+# create_private_repos_from_templates
+create_private_repos_from_templates() {
+
+  for ((i=0; i<"${#SOURCE_REPOS[@]}"; i++)); do
+
+    # Create a repository in an organization from a template.
+    create_platform_repo_from_template \
+      "${SOURCE_REPOS_OWNER}" \
+      "${SOURCE_REPOS[i]}" \
+      "${GH_ORG_NAME}" \
+      "${TARGET_REPOS[i]}"
+
+    command_status=$?
+
+    if (( command_status != 0 )); then
+      echo -n "${ERR} An error occurred while creating the " >&2
+      echo -n "${GH_ORG_NAME}/${TARGET_REPOS[i]} repository from " >&2
+      echo "the ${SOURCE_REPOS_OWNER}/${SOURCE_REPOS[i]} template" >&2
+      exit 1
+    fi
+  done
+  echo "${OK} Creating repositories has been completed"
+}
+
 # Checks if repositories listed in the array in the config file exist. Aborts
 # the script with an error message if any repository does not exist. Usage:
 # check_if_repos_exist <repos_owner> <repos_name> <repos>

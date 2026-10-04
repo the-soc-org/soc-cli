@@ -27,27 +27,18 @@ fork_repositories() {
   echo "${OK} Forking repositories has been completed"
 }
 
-# Create repositories in GH_ORG_NAME from SOURCE_REPOS_OWNER templates. Usage:
-# create_private_repos_from_templates
-create_private_repos_from_templates() {
+# Creates a repository in an organization from a template.
+# Usage: create_platform_repo_from_template <source_owner> <source_repo> <target_owner> <target_repo>
+create_platform_repo_from_template() {
 
-  for ((i=0; i<"${#SOURCE_REPOS[@]}"; i++)); do
+  local source_owner="$1"
+  local source_repo="$2"
+  local target_owner="$3"
+  local target_repo="$4"
 
-    # Create a repository in an organization from a template.
-    gh repo create "${GH_ORG_NAME}"/"${TARGET_REPOS[i]}" \
-       --template "${SOURCE_REPOS_OWNER}"/"${SOURCE_REPOS[i]}" \
-       --private=true
-
-    command_status=$?
-
-    if (( command_status != 0 )); then
-      echo -n "${ERR} An error occurred while creating the " >&2
-      echo -n "${GH_ORG_NAME}/${TARGET_REPOS[i]} repository from " >&2
-      echo "the ${SOURCE_REPOS_OWNER}/${SOURCE_REPOS[i]} template" >&2
-      exit 1
-    fi
-  done
-  echo "${OK} Creating repositories has been completed"
+  gh repo create "${target_owner}"/"${target_repo}" \
+     --template "${source_owner}"/"${source_repo}" \
+     --private=true
 }
 
 # Delete repositories listed in TARGET_REPOS array in user_config.sh file from
