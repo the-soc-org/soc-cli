@@ -731,6 +731,47 @@ create_project_from_template() {
   fi
 }
 
+# Delete project TARGET_PROJECT_TITLE defined in user_config.sh file from
+# GH_ORG_NAME. Usage: delete_project
+delete_project() {
+  # Local variable declaration
+  local project_number
+
+  project_number=$(get_project_number)
+  command_status=$?
+  if (( command_status == 0 )); then
+    if [[ -n "${project_number}" ]]; then
+      echo -n "${YUP} Obtaining the number of the '${TARGET_PROJECT_TITLE}' "
+      echo "project has been completed"
+    else
+      echo -n "${WRN} The '${TARGET_PROJECT_TITLE}' project within the "
+      echo -n "'${GH_ORG_NAME}' organization might have been closed or "
+      echo -n "does not exist, as the obtained number for this project "
+      echo -n "is empty: the '${GH_ORG_NAME}' organization has no such "
+      echo -n "open project. Check the 'user_config' file to ensure "
+      echo -n "that you have correctly entered 'GH_ORG_NAME' and "
+      echo "'TARGET_PROJECT_TITLE'."
+      exit 1
+    fi
+  else
+    echo "${project_number}" >&2
+    exit 1
+  fi
+
+  # deleting a project
+  delete_project_by_number "${project_number}"
+
+  command_status=$?
+
+  if (( command_status != 0 )); then
+    echo -n "${ERR} An error occurred while deleting the " >&2
+    echo "'${TARGET_PROJECT_TITLE}' from '${GH_ORG_NAME}'" >&2
+    exit 1
+  fi
+  echo -n "${OK} Deletion of the '${TARGET_PROJECT_TITLE}' project "
+  echo "has been completed."
+}
+
 # TODO:
 # Add function validations on global variables from system_config.sh
 # END:
