@@ -41,25 +41,23 @@ create_platform_repo_from_template() {
      --private=true
 }
 
-# Delete repositories listed in TARGET_REPOS array in user_config.sh file from
-# GH_ORG_NAME. Usage: delete_repositories
-delete_repositories() {
+# Deletes the repository identified by its owner and name from the platform
+# using the GitHub 'gh repo delete' command with the '--yes' flag, so that the
+# deletion runs without an interactive confirmation prompt.
+# Usage: delete_platform_repo_by_name <repo_owner> <repo_name>
+delete_platform_repo_by_name() {
 
-  for ((i=0; i<"${#TARGET_REPOS[@]}"; i++)); do
+  # Check if the correct number of non-empty arguments is passed
+  if [[ "$#" -ne 2 || -z "$1" || -z "$2" ]]; then
+    echo "${ERR} Invalid number of arguments or empty argument." >&2
+    echo "${WRN} Usage: ${FUNCNAME[0]} <repo_owner> <repo_name>"
+    exit 1
+  fi
 
-    # deleting a repo
-    gh repo delete "$GH_ORG_NAME"/"${TARGET_REPOS[i]}" --yes
+  local repo_owner="$1"
+  local repo_name="$2"
 
-    command_status=$?
-
-    if (( command_status != 0 )); then
-      echo -n "${ERR} An error occurred while deleting the repository" >&2
-      echo "$GH_ORG_NAME"/"${TARGET_REPOS[i]}" >&2
-      exit 1
-    fi
-  done
-
-  echo "${OK} Deletion of the repositories has been completed."
+  gh repo delete "${repo_owner}"/"${repo_name}" --yes
 }
 
 # Sets specified repositories in GH_ORG_NAME as private and marks them as

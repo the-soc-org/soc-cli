@@ -772,6 +772,27 @@ delete_project() {
   echo "has been completed."
 }
 
+# Delete repositories listed in TARGET_REPOS array in user_config.sh file from
+# GH_ORG_NAME. Usage: delete_repositories
+delete_repositories() {
+
+  for ((i=0; i<"${#TARGET_REPOS[@]}"; i++)); do
+
+    # deleting a repo
+    delete_platform_repo_by_name "$GH_ORG_NAME" "${TARGET_REPOS[i]}"
+
+    command_status=$?
+
+    if (( command_status != 0 )); then
+      echo -n "${ERR} An error occurred while deleting the repository" >&2
+      echo "$GH_ORG_NAME"/"${TARGET_REPOS[i]}" >&2
+      exit 1
+    fi
+  done
+
+  echo "${OK} Deletion of the repositories has been completed."
+}
+
 # TODO:
 # Add function validations on global variables from system_config.sh
 # END:
